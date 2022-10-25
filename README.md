@@ -1,6 +1,6 @@
 # Java Promise
 
-一个仿照 JavaScript 中 `Promise` 风格，内部基于 Kotlin 协程实现的 Java 异步提交框架。
+一个仿照 JavaScript 中 `Promise` 风格，内部基于 Kotlin 协程实现的 Java 异步任务框架。
 
 ## Promise 风格
 
