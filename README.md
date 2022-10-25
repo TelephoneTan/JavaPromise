@@ -14,28 +14,28 @@
 
 具体的用法体现在测试用例中：
 
-### TestMultipleSemaphore.java
+### [TestMultipleSemaphore.java](./src/test/java/TestMultipleSemaphore.java)
 
 同一个任务受到多个并发度控制
 
-### TestOnceTask.java
+### [TestOnceTask.java](./src/test/java/TestOnceTask.java)
 
 无论结果如何，只会被执行一次的任务
 
-### TestPromise.java
+### [TestPromise.java](./src/test/java/TestPromise.java)
 
 * 通过构造任务之间的依赖关系来创建任务链
 * 给任务设置超时
 
-### TestPromiseSemaphore.java
+### [TestPromiseSemaphore.java](./src/test/java/TestPromiseSemaphore.java)
 
 受单个并发度控制的任务
 
-### TestSharedTask.java
+### [TestSharedTask.java](./src/test/java/TestSharedTask.java)
 
 同一时间只会有一个任务在执行，但可以接受多次结果请求，任务结束后统一发布结果的“共享任务”
 
-### TestTimedTask.java
+### [TestTimedTask.java](./src/test/java/TestTimedTask.java)
 
 * 创建定时任务
 * 更改定时任务的计划运行次数
