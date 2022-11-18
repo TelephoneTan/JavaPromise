@@ -6,11 +6,12 @@ import kotlinx.coroutines.channels.Channel;
 import kotlinx.coroutines.sync.Mutex;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Promise<T> {
 
@@ -23,20 +24,15 @@ public class Promise<T> {
     final CountDownLatch settledLatch = new CountDownLatch(1);
     final Channel<Unit> setResult = ExecutorKt.newChannel(1);
     final CountDownLatch go = new CountDownLatch(1);
-    final Channel<Unit> postSemaphore = ExecutorKt.newChannel(1);
     final PromiseSemaphore semaphore;
 
     final PromiseJob<T> job;
 
-    AtomicBoolean plannedToCancel = new AtomicBoolean(true);
+    final AtomicInteger timeoutSN = new AtomicInteger(0);
 
     void settle() {
-        if (semaphore != null && ExecutorKt.trySend(postSemaphore)) {
-            PromiseSemaphore s = semaphore;
-            while (s != null) {
-                s.Post(1);
-                s = s.parent;
-            }
+        if (semaphore != null) {
+            semaphore.Release();
         }
         settledLatch.countDown();
         settled.close(null);
@@ -69,11 +65,20 @@ public class Promise<T> {
         return true;
     }
 
-    public void Await() {
+    public Promise<T> Await() {
         try {
             settledLatch.await();
         } catch (InterruptedException e) {
             e.printStackTrace();
+        }
+        return this;
+    }
+
+    public static <T> void AwaitAll(List<Promise<T>> all) {
+        if (all != null) {
+            for (Promise<T> promise : all) {
+                promise.Await();
+            }
         }
     }
 
@@ -162,7 +167,7 @@ public class Promise<T> {
                             promise.copyStateTo(Promise.this, Promise.this::fail);
                         }
                     }
-                }, new PromiseRejector<T>() {
+                }, new PromiseRejector() {
                     @Override
                     void cancel() {
                         Cancel();
@@ -171,15 +176,6 @@ public class Promise<T> {
                     @Override
                     public void Reject(Throwable reason) {
                         fail(reason);
-                    }
-
-                    @Override
-                    public void Reject(Promise<T> promise) {
-                        if (promise == null) {
-                            fail(null);
-                        } else {
-                            promise.copyStateTo(Promise.this, Promise.this::fail);
-                        }
                     }
                 });
             } catch (Throwable e) {
@@ -192,7 +188,7 @@ public class Promise<T> {
             List<Promise<E>> promiseList,
             CountDownLatch latch,
             Channel<Unit> channel,
-            Object[] valueList,
+            List<E> valueList,
             Mutex valueListMutex,
             Throwable[] reasonList,
             Mutex reasonListMutex,
@@ -227,7 +223,7 @@ public class Promise<T> {
                     } else if (promise.succeeded()) {
                         ExecutorKt.withLock(new Mutex[]{valueListMutex, successFlagListMutex}, () -> {
                             successFlagList[ii] = true;
-                            valueList[ii] = promise.value;
+                            valueList.set(ii, promise.value);
                             //
                             latch.countDown();
                             channel.send(Unit.INSTANCE, wontSuspendContinuation);
@@ -238,13 +234,17 @@ public class Promise<T> {
         }
     }
 
-    static <S, T, U> Promise<S> dependOn(PromiseSemaphore semaphore, PromiseCompoundFulfilledListener<S> f, PromiseRejectedListener<S> r, PromiseCancelledListener c, PromiseSettledListener s, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromiseList) {
+    static <S, T, U> Promise<S> dependOn(PromiseSemaphore semaphore, PromiseCompoundFulfilledListener<T, U, S> f, PromiseRejectedListener<S> r, PromiseCancelledListener c, PromiseSettledListener s, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromiseList) {
         return new Promise<>((resolver, rejector) -> {
             int requiredNum = requiredPromiseList == null ? 0 : requiredPromiseList.size();
             int optionalNum = optionalPromiseList == null ? 0 : optionalPromiseList.size();
             int totalNum = requiredNum + optionalNum;
             //
-            Object[] requiredValue = new Object[requiredNum];
+            List<T> requiredValue = new ArrayList<T>(requiredNum) {{
+                for (int i = 0; i < requiredNum; i++) {
+                    add(null);
+                }
+            }};
             Mutex rv = ExecutorKt.newMutex();
             Throwable[] requiredReason = new Throwable[requiredNum];
             Mutex rr = ExecutorKt.newMutex();
@@ -253,7 +253,11 @@ public class Promise<T> {
             boolean[] requiredSuccess = new boolean[requiredNum];
             Mutex rs = ExecutorKt.newMutex();
             //
-            Object[] optionalValue = new Object[optionalNum];
+            List<U> optionalValue = new ArrayList<U>(optionalNum) {{
+                for (int i = 0; i < optionalNum; i++) {
+                    add(null);
+                }
+            }};
             Mutex ov = ExecutorKt.newMutex();
             Throwable[] optionalReason = new Throwable[optionalNum];
             Mutex or = ExecutorKt.newMutex();
@@ -281,14 +285,14 @@ public class Promise<T> {
                     optionalPromiseList,
                     latch,
                     channel,
-                    requiredValue,
-                    rv,
-                    requiredReason,
-                    rr,
-                    requiredCancel,
-                    rc,
-                    requiredSuccess,
-                    rs
+                    optionalValue,
+                    ov,
+                    optionalReason,
+                    or,
+                    optionalCancel,
+                    oc,
+                    optionalSuccess,
+                    os
             );
             Continuation<Unit> rejectMe = ExecutorKt.normalContinuation(rejector::Reject);
             ExecutorKt.awaitGroup(channel, totalNum, latch, () -> ExecutorKt.withLock(new Mutex[]{rv, rr, rc, rs, ov, or, oc, os}, () -> {
@@ -315,24 +319,17 @@ public class Promise<T> {
                 Throwable reasonF = reason;
                 RunThrowsThrowable rest = () -> {
                     RunThrowsThrowable afterFinally = () -> {
-                        if (cancelledF) {
-                            rejector.cancel();
-                            if (c != null) {
-                                ExecutorKt.submitAsync(c::OnCancelled, e -> {
-                                });
-                            }
-                        } else {
+                        if (!cancelledF) {
                             if (succeededF) {
                                 if (f == null) {
                                     resolver.Resolve((S) null);
                                 } else {
-                                    Object res = f.OnFulfilled(
-                                            new PromiseCompoundResult()
-                                                    .setRequiredValueList(requiredValue)
-                                                    .setOptionalValueList(optionalValue)
-                                                    .setOptionalReasonList(optionalReason)
-                                                    .setOptionalCancelFlagList(optionalCancel)
-                                                    .setOptionalSuccessFlagList(optionalSuccess)
+                                    Object res = f.OnFulfilled(new PromiseCompoundResult<T, U>()
+                                            .setRequiredValueList(requiredValue)
+                                            .setOptionalValueList(optionalValue)
+                                            .setOptionalReasonList(optionalReason)
+                                            .setOptionalCancelFlagList(optionalCancel)
+                                            .setOptionalSuccessFlagList(optionalSuccess)
                                     );
                                     try {
                                         resolver.Resolve((Promise<S>) res);
@@ -354,6 +351,13 @@ public class Promise<T> {
                             }
                         }
                     };
+                    if (cancelledF) {
+                        rejector.cancel();
+                        if (c != null) {
+                            ExecutorKt.submitAsync(c::OnCancelled, e -> {
+                            });
+                        }
+                    }
                     if (s != null) {
                         Promise<?> promise = s.OnSettled();
                         if (promise != null) {
@@ -373,7 +377,7 @@ public class Promise<T> {
                 };
                 //
                 if (semaphore != null) {
-                    ExecutorKt.acquirePromiseSemaphore(semaphore, rest, rejectMe);
+                    semaphore.Acquire(rest::run, rejectMe);
                 } else {
                     rest.run();
                 }
@@ -382,26 +386,26 @@ public class Promise<T> {
     }
 
     public <S> Promise<S> Then(PromiseFulfilledListener<T, S> onFulfilled) {
-        return dependOn(null, value -> onFulfilled == null ? null : onFulfilled.OnFulfilled((T) value.RequiredValueList[0]), null, null, null, Collections.singletonList(this), null);
+        return dependOn(null, value -> onFulfilled == null ? null : onFulfilled.OnFulfilled(value.RequiredValueList.get(0)), null, null, null, Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> Then(PromiseSemaphore semaphore, PromiseFulfilledListener<T, S> onFulfilled) {
-        return dependOn(semaphore, value -> onFulfilled == null ? null : onFulfilled.OnFulfilled((T) value.RequiredValueList[0]), null, null, null, Collections.singletonList(this), null);
+        return dependOn(semaphore, value -> onFulfilled == null ? null : onFulfilled.OnFulfilled(value.RequiredValueList.get(0)), null, null, null, Collections.singletonList(this), null);
     }
 
-    public static <S, T> Promise<S> ThenAll(PromiseCompoundFulfilledListener<S> onFulfilled, List<Promise<T>> requiredPromiseList) {
+    public static <S, T> Promise<S> ThenAll(PromiseCompoundFulfilledListener<T, Object, S> onFulfilled, List<Promise<T>> requiredPromiseList) {
         return dependOn(null, onFulfilled, null, null, null, requiredPromiseList, null);
     }
 
-    public static <S, T> Promise<S> ThenAll(PromiseSemaphore semaphore, PromiseCompoundFulfilledListener<S> onFulfilled, List<Promise<T>> requiredPromiseList) {
+    public static <S, T> Promise<S> ThenAll(PromiseSemaphore semaphore, PromiseCompoundFulfilledListener<T, Object, S> onFulfilled, List<Promise<T>> requiredPromiseList) {
         return dependOn(semaphore, onFulfilled, null, null, null, requiredPromiseList, null);
     }
 
-    public static <S, T, U> Promise<S> ThenAll(PromiseCompoundFulfilledListener<S> onFulfilled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+    public static <S, T, U> Promise<S> ThenAll(PromiseCompoundFulfilledListener<T, U, S> onFulfilled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
         return dependOn(null, onFulfilled, null, null, null, requiredPromiseList, optionalPromises);
     }
 
-    public static <S, T, U> Promise<S> ThenAll(PromiseSemaphore semaphore, PromiseCompoundFulfilledListener<S> onFulfilled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+    public static <S, T, U> Promise<S> ThenAll(PromiseSemaphore semaphore, PromiseCompoundFulfilledListener<T, U, S> onFulfilled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
         return dependOn(semaphore, onFulfilled, null, null, null, requiredPromiseList, optionalPromises);
     }
 
@@ -485,8 +489,7 @@ public class Promise<T> {
     protected Promise(PromiseJob<T> job, PromiseSemaphore semaphore, boolean shouldWrapJobWithSemaphore) {
         this.semaphore = semaphore;
         this.job = (!shouldWrapJobWithSemaphore || semaphore == null) ? job :
-                (resolver, rejector) -> ExecutorKt.acquirePromiseSemaphore(
-                        semaphore,
+                (resolver, rejector) -> semaphore.Acquire(
                         () -> job.Do(resolver, rejector),
                         ExecutorKt.normalContinuation(Promise.this::fail)
                 );
@@ -513,7 +516,7 @@ public class Promise<T> {
         return promise;
     }
 
-    public synchronized Promise<T> SetTimeOut(Duration d, PromiseTimeOutListener onTimeOut) {
+    public synchronized Promise<T> SetTimeout(Duration d, PromiseTimeOutListener onTimeOut) {
         boolean ok = true;
         try {
             ok = settledLatch.await(0, TimeUnit.SECONDS);
@@ -521,11 +524,9 @@ public class Promise<T> {
             e.printStackTrace();
         }
         if (!ok) {
-            plannedToCancel.set(false);
-            plannedToCancel = new AtomicBoolean(true);
-            AtomicBoolean currentPlannedToCancel = plannedToCancel;
+            int currentSN = timeoutSN.incrementAndGet();
             ExecutorKt.delay(d.toNanos(), () -> {
-                if (currentPlannedToCancel.get()) {
+                if (timeoutSN.get() == currentSN) {
                     if (Cancel() && onTimeOut != null) {
                         ExecutorKt.submitAsync(() -> onTimeOut.OnTimeOut(d), e -> {
                         });
@@ -534,5 +535,9 @@ public class Promise<T> {
             }, ExecutorKt.cancelContinuation());
         }
         return this;
+    }
+
+    public synchronized Promise<T> SetTimeout(Duration d) {
+        return SetTimeout(d, null);
     }
 }

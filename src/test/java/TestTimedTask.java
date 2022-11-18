@@ -12,7 +12,7 @@ public class TestTimedTask {
         TimedTask task = new TimedTask(Duration.ofMillis(50), (resolver, rejector) -> {
             System.out.println("hello " + new SimpleDateFormat("yyyy 年 MM 月 dd 日 HH 时 mm 分 ss 秒 . SSS").format(new Date()));
             resolver.Resolve(true);
-        });
+        }, 152 /*2*/ /*3*/ /*4*/);
         task.AddTimesBy(1).Then(value -> {
             System.out.printf("成功增加了 %d 次运行\n", value);
             return null;
@@ -28,49 +28,9 @@ public class TestTimedTask {
             return null;
         }).Await();
         Promise<Integer> taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
-        taskPromise = task.Start();
+        for (int i = 0; i < 1000; i++) {
+            taskPromise = task.Start();
+        }
         Promise<Object> completed = taskPromise.Then(value -> {
             System.out.printf("一共运行了 %d 次\n", value);
             return null;
@@ -84,7 +44,7 @@ public class TestTimedTask {
             return null;
         }).Then(value -> {
             Thread.sleep(3000 * 2);
-            task.SetDuration(Duration.ofSeconds(1));
+            task.SetInterval(Duration.ofSeconds(1));
             System.out.println("已更改间隔");
             return null;
         }).Then(value -> {

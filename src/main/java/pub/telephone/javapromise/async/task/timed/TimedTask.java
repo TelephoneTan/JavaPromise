@@ -1,8 +1,8 @@
 package pub.telephone.javapromise.async.task.timed;
 
 import kotlin.Unit;
-import kotlin.coroutines.Continuation;
 import kotlinx.coroutines.channels.Channel;
+import pub.telephone.javapromise.async.Async;
 import pub.telephone.javapromise.async.promise.*;
 
 import java.time.Duration;
@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class TimedTask {
-    final AtomicReference<Duration> duration;
+    final AtomicReference<Duration> interval;
     final PromiseJob<Boolean> job;
     final PromiseSemaphore semaphore;
     final boolean lifeLimited;
@@ -26,8 +26,10 @@ public class TimedTask {
     final AtomicInteger succeededTimes = new AtomicInteger(0);
     final Channel<Unit> started = ExecutorKt.newChannel(1);
 
+    static final Throwable archivedError = new Throwable("定时任务已归档");
+
     protected TimedTask(Duration interval, PromiseJob<Boolean> job, boolean lifeLimited, int lifeTimes, PromiseSemaphore semaphore) {
-        this.duration = new AtomicReference<>(interval);
+        this.interval = new AtomicReference<>(interval);
         this.job = job;
         this.lifeLimited = lifeLimited;
         this.lifeTimes = ExecutorKt.newChannel(1);
@@ -44,36 +46,32 @@ public class TimedTask {
                 ExecutorKt.noErrorContinuation()));
     }
 
-    public TimedTask(Duration duration, PromiseJob<Boolean> job) {
-        this(duration, job, false, 0, null);
+    public TimedTask(Duration interval, PromiseJob<Boolean> job) {
+        this(interval, job, false, 0, null);
     }
 
-    public TimedTask(Duration duration, PromiseJob<Boolean> job, PromiseSemaphore semaphore) {
-        this(duration, job, false, 0, semaphore);
+    public TimedTask(Duration interval, PromiseJob<Boolean> job, PromiseSemaphore semaphore) {
+        this(interval, job, false, 0, semaphore);
     }
 
-    public TimedTask(Duration duration, PromiseJob<Boolean> job, int times) {
-        this(duration, job, true, times, null);
+    public TimedTask(Duration interval, PromiseJob<Boolean> job, int times) {
+        this(interval, job, true, times, null);
     }
 
-    public TimedTask(Duration duration, PromiseJob<Boolean> job, int times, PromiseSemaphore semaphore) {
-        this(duration, job, true, times, semaphore);
+    public TimedTask(Duration interval, PromiseJob<Boolean> job, int times, PromiseSemaphore semaphore) {
+        this(interval, job, true, times, semaphore);
     }
 
-    boolean isArchived() {
+    public boolean IsArchived() {
         return archived.isClosedForSend();
     }
 
     <E> Promise<E> modify(PromiseJob<E> op) {
         Promise<E> res = new Promise<>((resolver, rejector) -> ExecutorKt.onSend(modifying, () -> {
-            if (isArchived()) {
-                rejector.Reject(new Exception("定时任务已归档"));
-                return;
-            }
-            try {
+            if (IsArchived()) {
+                rejector.Reject(archivedError);
+            } else {
                 op.Do(resolver, rejector);
-            } catch (Throwable e) {
-                rejector.Reject(e);
             }
         }, ExecutorKt.normalContinuation(rejector::Reject)));
         res.Finally(() -> {
@@ -110,15 +108,14 @@ public class TimedTask {
 
     public Promise<Integer> Start(Duration... delay) {
         if (ExecutorKt.trySend(started)) {
-            try {
-                checkStopPoint(() -> {
-                    TimedTask.this.run();
-                    ExecutorKt.trySend(block, new token());
-                    Resume(delay);
-                }, true, null, ExecutorKt.normalContinuation(TimedTask.this::error));
-            } catch (Throwable e) {
-                error(e);
-            }
+            new Promise<>((resolver, rejector) -> {
+                TimedTask.this.run();
+                ExecutorKt.trySend(block, new token());
+                resolver.Resolve(Resume(delay));
+            }).Catch(reason -> {
+                error(reason);
+                return null;
+            });
         }
         return promise;
     }
@@ -132,9 +129,9 @@ public class TimedTask {
         }));
     }
 
-    public Promise<Object> Resume(Duration... duration) {
+    public Promise<Object> Resume(Duration... delay) {
         return modify((resolver, rejector) -> ExecutorKt.tryReceive(block, v -> {
-            v.setDelay(duration == null || duration.length == 0 ? null : duration[0]);
+            v.setDelay(delay == null || delay.length == 0 ? null : delay[0]);
             ExecutorKt.trySend(token, v);
             resolver.Resolve(null);
         }, () -> {
@@ -142,9 +139,9 @@ public class TimedTask {
         }));
     }
 
-    public Promise<Object> SetDuration(Duration duration) {
+    public Promise<Object> SetInterval(Duration interval) {
         return modify((resolver, rejector) -> {
-            this.duration.set(duration);
+            this.interval.set(interval);
             resolver.Resolve(null);
         });
     }
@@ -185,97 +182,67 @@ public class TimedTask {
         }
     }
 
-    void checkStopPoint(RunThrowsThrowable then, boolean consumeLife, RunThrowsThrowable quitThen, Continuation<Unit> continuation) throws Throwable {
-        if (isArchived()) {
-            if (quitThen != null) {
-                quitThen.run();
+    Promise<Object> checkAlive(boolean consumeLife) {
+        return new Promise<>((resolver, rejector) -> ExecutorKt.onReceive(lifeTimes, v -> {
+            boolean alive = !lifeLimited || v > 0;
+            if (alive && consumeLife) {
+                v--;
             }
-            return;
-        }
-        ExecutorKt.onReceive(lifeTimes, v -> {
-            try {
-                if (lifeLimited && v <= 0) {
-                    end();
-                    if (quitThen != null) {
-                        quitThen.run();
-                    }
-                    return;
-                }
-                if (consumeLife) {
-                    v--;
-                }
-            } finally {
-                ExecutorKt.trySend(lifeTimes, v);
+            if (!alive) {
+                end();
             }
-            then.run();
-        }, continuation);
+            ExecutorKt.trySend(lifeTimes, v);
+            if (alive) {
+                resolver.Resolve(null);
+            } else {
+                rejector.Reject(null);
+            }
+        }, ExecutorKt.normalContinuation(rejector::Reject)));
     }
 
-    void prepare(RunThrowsThrowable then, RunThrowsThrowable quitThen, Continuation<Unit> continuation) {
-        ExecutorKt.onReceive(token, v -> {
-            ExecutorKt.trySend(token, new token());
-            if (isArchived()) {
-                if (quitThen != null) {
-                    quitThen.run();
-                }
-                return;
-            }
-            RunThrowsThrowable doJob = () -> {
-                if (isArchived()) {
-                    if (quitThen != null) {
-                        quitThen.run();
-                    }
-                    return;
-                }
-                then.run();
-            };
-            if (v.delay != null) {
-                ExecutorKt.delay(v.delay.toNanos(), doJob, continuation);
-            } else {
-                doJob.run();
-            }
-        }, archived, quitThen == null ? () -> {
-        } : quitThen, continuation);
+    Promise<Object> prepare() {
+        return
+                new Promise<token>((resolver, rejector) -> ExecutorKt.onReceive(token, v -> {
+                    ExecutorKt.trySend(token, new token());
+                    resolver.Resolve(v);
+                }, archived, () -> {
+                    throw archivedError;
+                }, ExecutorKt.normalContinuation(rejector::Reject)))
+                        .Then((PromiseFulfilledListener<token, token>) token ->
+                                checkAlive(false)
+                                        .Then((PromiseFulfilledListener<Object, token>) value -> token))
+                        .Then(value -> value.delay == null ? null : Async.Delay(value.delay))
+                        .Then(value -> checkAlive(true));
     }
 
     void run() {
-        new Promise<Boolean>((resolver, rejector) -> {
-            Continuation<Unit> rejectThis = ExecutorKt.normalContinuation(rejector::Reject);
-            RunThrowsThrowable quitThen = () -> resolver.Resolve(false);
-            //
-            prepare(() -> resolver.Resolve(new Promise<>(job, semaphore)), quitThen, rejectThis);
-        }).Then(value -> new Promise<>((resolver, rejector) -> {
-            succeededTimes.incrementAndGet();
-            //
-            Continuation<Unit> rejectThis = ExecutorKt.normalContinuation(rejector::Reject);
-            RunThrowsThrowable quitThen = () -> resolver.Resolve(null);
-            //
-            if (value == null || value) {
-                checkStopPoint(() -> {
-                    RunThrowsThrowable afterDelay = () -> checkStopPoint(
-                            TimedTask.this::run,
-                            true,
-                            quitThen,
-                            rejectThis
-                    );
-                    Duration d = duration.get();
-                    if (d != null) {
-                        ExecutorKt.delay(
-                                d.toNanos(),
-                                afterDelay,
-                                rejectThis
-                        );
-                    } else {
-                        afterDelay.run();
+        prepare()
+                .Then((PromiseFulfilledListener<Object, Boolean>) value -> new Promise<>(job, semaphore))
+                .Then((PromiseFulfilledListener<Boolean, Boolean>) value -> {
+                    succeededTimes.incrementAndGet();
+                    return value;
+                })
+                .Then(value -> {
+                    if (value != null && !value) {
+                        end();
+                        throw new Throwable("提前结束了");
                     }
-                }, false, quitThen, rejectThis);
-            } else {
-                end();
-                quitThen.run();
-            }
-        })).Catch(reason -> {
-            error(reason);
-            return null;
-        });
+                    return null;
+                })
+                .Then(value -> checkAlive(false))
+                .Then(value1 -> {
+                    Duration d = interval.get();
+                    return d == null ? null : Async.Delay(d);
+                })
+                .Then(value12 -> checkAlive(false))
+                .Then(value13 -> {
+                    TimedTask.this.run();
+                    return null;
+                })
+                .Catch(reason -> {
+                    error(reason);
+                    return null;
+                })
+        ;
     }
 }

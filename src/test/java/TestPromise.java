@@ -22,11 +22,11 @@ public class TestPromise {
                 resolver.Resolve("x");
             }, semaphore);
             promise
-                    .SetTimeOut(Duration.ofMillis(interval * 5), d ->
-                            System.out.printf("任务 %d 已超时（%ds）\n", ii, d.toMillis() / 1000)
+                    .SetTimeout(Duration.ofMillis(interval * 5), d ->
+                            System.out.printf("任务 %d 已超时（%d s）\n", ii, d.toMillis() / 1000)
                     )
-                    .SetTimeOut(Duration.ofMillis(interval * 10), d ->
-                            System.out.printf("任务 %d 已超时（%ds）\n", ii, d.toMillis() / 1000)
+                    .SetTimeout(Duration.ofMillis(interval * 10), d ->
+                            System.out.printf("任务 %d 已超时（%d s）\n", ii, d.toMillis() / 1000)
                     )
             ;
             promise = promise.Then(value -> {

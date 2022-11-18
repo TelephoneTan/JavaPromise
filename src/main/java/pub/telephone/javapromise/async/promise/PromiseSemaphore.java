@@ -1,7 +1,9 @@
 package pub.telephone.javapromise.async.promise;
 
 import kotlin.Unit;
+import kotlin.coroutines.Continuation;
 import kotlinx.coroutines.channels.Channel;
+import pub.telephone.javapromise.async.AsyncRunnableThrowsThrowable;
 
 public class PromiseSemaphore {
     PromiseSemaphore parent;
@@ -10,6 +12,22 @@ public class PromiseSemaphore {
 
     public PromiseSemaphore(int available) {
         Post(available);
+    }
+
+    public void Acquire(AsyncRunnableThrowsThrowable then, Continuation<? super Unit> continuation) {
+        ExecutorKt.acquirePromiseSemaphore(this, 1, 0, then::Run, continuation);
+    }
+
+    public void Release() {
+        PromiseSemaphore s = this;
+        while (s != null) {
+            s.Post(1);
+            s = s.parent;
+        }
+    }
+
+    public void Get(int n, AsyncRunnableThrowsThrowable then, Continuation<? super Unit> continuation) {
+        ExecutorKt.acquirePromiseSemaphore(this, n, 1, then::Run, continuation);
     }
 
     public void Post(int n) {

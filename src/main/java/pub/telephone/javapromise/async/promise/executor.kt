@@ -85,10 +85,10 @@ suspend fun withLock(mutexList: Array<Mutex>, then: RunThrowsThrowable) {
 }
 
 suspend fun awaitGroup(
-        channel: Channel<Unit>,
-        num: Int,
-        latch: CountDownLatch,
-        then: RunThrowsThrowable
+    channel: Channel<Unit>,
+    num: Int,
+    latch: CountDownLatch,
+    then: RunThrowsThrowable
 ) {
     val l = CountDownLatch(1)
     l.countDown()
@@ -101,8 +101,8 @@ suspend fun awaitGroup(
 }
 
 fun readFromOrSendTo(
-        from: Channel<Unit>,
-        to: Channel<Unit>
+    from: Channel<Unit>,
+    to: Channel<Unit>
 ) {
     if (from.tryReceive().isFailure) {
         to.trySend(Unit)
@@ -178,10 +178,10 @@ suspend fun <E> onReceive(from: Channel<E>, then: RunWithValueThrowsThrowable<E>
 }
 
 suspend fun <E> onReceive(
-        from: Channel<E>,
-        then: RunWithValueThrowsThrowable<E>,
-        quit: Channel<Unit>,
-        quitThen: RunThrowsThrowable
+    from: Channel<E>,
+    then: RunWithValueThrowsThrowable<E>,
+    quit: Channel<Unit>,
+    quitThen: RunThrowsThrowable
 ) {
     val l = CountDownLatch(1)
     l.countDown()
@@ -198,12 +198,12 @@ suspend fun <E> onReceive(
 }
 
 suspend fun <A, B, C> onReceive(
-        one: Channel<A>,
-        oneThen: RunWithValueThrowsThrowable<A>,
-        two: Channel<B>,
-        twoThen: RunWithValueThrowsThrowable<B>,
-        three: Channel<C>,
-        threeThen: RunWithValueThrowsThrowable<C>
+    one: Channel<A>,
+    oneThen: RunWithValueThrowsThrowable<A>,
+    two: Channel<B>,
+    twoThen: RunWithValueThrowsThrowable<B>,
+    three: Channel<C>,
+    threeThen: RunWithValueThrowsThrowable<C>
 ) {
     val l = CountDownLatch(1)
     l.countDown()
@@ -231,14 +231,23 @@ suspend fun onSend(to: Channel<Unit>, then: RunThrowsThrowable) {
     then.run()
 }
 
-suspend fun acquirePromiseSemaphore(semaphore: PromiseSemaphore?, then: RunThrowsThrowable) {
+suspend fun acquirePromiseSemaphore(semaphore: PromiseSemaphore?, n: Int, depth: Int, then: RunThrowsThrowable) {
     var s = semaphore
+    var d = depth
     while (s != null) {
-        val l = CountDownLatch(1)
-        l.countDown()
-        s.ticketChannel.receive()
-        l.await()
+        for (i in 1..n) {
+            val l = CountDownLatch(1)
+            l.countDown()
+            s.ticketChannel.receive()
+            l.await()
+        }
         s = s.parent
+        if (d >= 1) {
+            d--
+            if (d <= 0) {
+                break
+            }
+        }
     }
     then.run()
 }
