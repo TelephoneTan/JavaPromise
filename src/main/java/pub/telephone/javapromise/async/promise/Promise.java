@@ -516,6 +516,12 @@ public class Promise<T> {
         return promise;
     }
 
+    public static <S> Promise<S> Cancelled() {
+        Promise<S> promise = new Promise<>();
+        promise.Cancel();
+        return promise;
+    }
+
     public synchronized Promise<T> SetTimeout(Duration d, PromiseTimeOutListener onTimeOut) {
         boolean ok = true;
         try {

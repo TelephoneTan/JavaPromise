@@ -1,7 +1,7 @@
+import org.junit.jupiter.api.Test;
 import pub.telephone.javapromise.async.Async;
 import pub.telephone.javapromise.async.task.shared.SharedTask;
 import pub.telephone.javapromise.async.task.timed.TimedTask;
-import org.junit.jupiter.api.Test;
 
 import java.text.SimpleDateFormat;
 import java.time.Duration;
@@ -18,11 +18,17 @@ public class TestSharedTask {
                                         .format(new Date())
                 )
         ));
+        Async.Delay(Duration.ofSeconds(5)).Then(value -> {
+            for (int i = 0; i < 100000; i++) {
+                task.Cancel();
+            }
+            return null;
+        });
         new TimedTask(Duration.ofMillis(200), (resolver, rejector) -> {
             task.Do().Then(value -> {
                 System.out.println(value);
                 return null;
-            });
+            }).ForCancel(() -> System.out.println("不妙，被取消了"));
             resolver.Resolve(true);
         }).Start().Await();
     }

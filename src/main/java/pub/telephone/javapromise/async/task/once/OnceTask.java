@@ -31,4 +31,15 @@ public class OnceTask<T> {
             resolver.Resolve(v);
         }, ExecutorKt.noErrorContinuation()));
     }
+
+    public void Cancel() {
+        ExecutorKt.onReceive(promise, v -> {
+            if (v != null) {
+                v.Cancel();
+            } else {
+                v = Promise.Cancelled();
+            }
+            ExecutorKt.trySend(promise, v);
+        }, ExecutorKt.noErrorContinuation());
+    }
 }
