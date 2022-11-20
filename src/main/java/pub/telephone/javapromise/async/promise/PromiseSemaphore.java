@@ -6,7 +6,7 @@ import kotlinx.coroutines.channels.Channel;
 import pub.telephone.javapromise.async.AsyncRunnableThrowsThrowable;
 
 public class PromiseSemaphore {
-    PromiseSemaphore parent;
+    volatile PromiseSemaphore parent;
     final Channel<Unit> ticketChannel = ExecutorKt.newChannel(Channel.UNLIMITED);
     final Channel<Unit> darkChannel = ExecutorKt.newChannel(Channel.UNLIMITED);
 
