@@ -1,10 +1,35 @@
 plugins {
     id 'java'
     id 'org.jetbrains.kotlin.jvm' version '1.7.10'
+    id 'maven-publish'
 }
 
 group 'org.example'
 version '1.0-SNAPSHOT'
+
+apply from: "./local.build.gradle"
+
+publishing {
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/TelephoneTan/JavaPromise")
+            credentials {
+                username = project.ext.gpr_github_user ?: System.getenv("GITHUB_USERNAME")
+                password = project.ext.gpr_github_key ?: System.getenv("GITHUB_TOKEN")
+            }
+        }
+    }
+    publications {
+        gpr(MavenPublication) {
+            groupId = 'pub.telephone'
+            artifactId = 'java-promise'
+            version = '1.0.0'
+
+            from(components.java)
+        }
+    }
+}
 
 repositories {
     mavenCentral()
