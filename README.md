@@ -40,3 +40,7 @@
 * 创建定时任务
 * 更改定时任务的计划运行次数
 * 更改定时任务的运行时间间隔
+
+### [TestVersionedTask.java](./src/test/java/TestVersionedTask.java)
+
+不定期手动触发、结果可复用的“版本任务”
