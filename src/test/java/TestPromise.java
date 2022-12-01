@@ -19,7 +19,7 @@ public class TestPromise {
             int ii = i;
             Promise<String> promise = new Promise<>((resolver, rejector) -> {
                 Thread.sleep(interval);
-                resolver.Resolve("x");
+                resolver.ResolveValue("x");
             }, semaphore);
             promise
                     .SetTimeout(Duration.ofMillis(interval * 5), d ->
