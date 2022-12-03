@@ -74,9 +74,12 @@ public class TestVersionedTask {
                                     .Then(print) // 如果重试后没有异常就正常打印
                                     .Catch(reason1 -> {
                                         throw reason1 == retry ?
-                                                new Throwable(newStat.description + "(unknown error)") : // 将第二次抛出的重试异常转化为未知错误
-                                                reason1; // 非重试异常，透传
+                                                // 将第二次抛出的重试异常转化为未知错误
+                                                new Throwable(newStat.description + "(unknown error)") :
+                                                // 非重试异常，透传
+                                                reason1;
                                     })
+                                    .ForCancel(() -> System.out.println(newStat.description + "（不妙，重试被取消了）"))
                                     ;
                         } else {
                             throw reason; // 非重试异常，透传
@@ -84,9 +87,14 @@ public class TestVersionedTask {
                     })
                     .Catch(reason -> { // 打印错误
                         System.out.println("Error: " + reason.getMessage());
+                        reason.printStackTrace();
                         return null;
-                    });
-            resolver.Resolve(System.currentTimeMillis() - sts < 5000);
+                    })
+                    .ForCancel(() -> System.out.println(stat.description + "（不妙，被取消了）"));
+            if (random.nextInt(50) == 0) {
+                clock.Cancel();
+            }
+            resolver.Resolve(true);
         }).Start().Await();
         Async.Delay(Duration.ofHours(5)).Await();
     }
