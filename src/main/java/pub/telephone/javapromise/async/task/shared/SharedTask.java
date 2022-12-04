@@ -26,7 +26,11 @@ public class SharedTask<T> {
         this(job, null);
     }
 
-    public Promise<T> Do() {
+    public SharedTask() {
+        this(null, null);
+    }
+
+    public Promise<T> Do(PromiseJob<T> job) {
         return new Promise<>((resolver, rejector) -> ExecutorKt.onReceive(promise, v -> {
             Promise<T> waitFor;
             if (v == null || v.TryAwait()) {
@@ -45,6 +49,10 @@ public class SharedTask<T> {
             ExecutorKt.trySend(promise, v);
             resolver.Resolve(waitFor);
         }, ExecutorKt.noErrorContinuation()));
+    }
+
+    public Promise<T> Do() {
+        return Do(job);
     }
 
     public void Cancel() {

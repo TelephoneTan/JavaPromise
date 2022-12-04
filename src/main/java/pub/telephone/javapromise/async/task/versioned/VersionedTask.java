@@ -23,6 +23,10 @@ public class VersionedTask<T> {
         this(job, null);
     }
 
+    public VersionedTask() {
+        this(null, null);
+    }
+
     synchronized public void Cancel() {
         if (cancelled) {
             return;
@@ -34,7 +38,7 @@ public class VersionedTask<T> {
         current = new VersionedPromise<>(current == null ? 0 : current.Version + 1, Promise.Cancelled());
     }
 
-    synchronized VersionedPromise<T> perform(Integer version) {
+    synchronized VersionedPromise<T> perform(Integer version, PromiseJob<T> job) {
         if (current == null || (version != null && version == current.Version)) {
             int nextVersion = current == null ? 0 : current.Version + 1;
             return current = new VersionedPromise<>(
@@ -51,11 +55,19 @@ public class VersionedTask<T> {
         }
     }
 
+    public VersionedPromise<T> Perform(PromiseJob<T> job) {
+        return perform(null, job);
+    }
+
     public VersionedPromise<T> Perform() {
-        return perform(null);
+        return perform(null, job);
+    }
+
+    public VersionedPromise<T> Perform(int version, PromiseJob<T> job) {
+        return perform(version, job);
     }
 
     public VersionedPromise<T> Perform(int version) {
-        return perform(version);
+        return perform(version, job);
     }
 }

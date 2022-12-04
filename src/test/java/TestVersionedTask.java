@@ -1,6 +1,7 @@
 import org.junit.jupiter.api.Test;
 import pub.telephone.javapromise.async.Async;
 import pub.telephone.javapromise.async.promise.PromiseFulfilledListener;
+import pub.telephone.javapromise.async.promise.PromiseJob;
 import pub.telephone.javapromise.async.task.timed.TimedTask;
 import pub.telephone.javapromise.async.task.versioned.VersionedPromise;
 import pub.telephone.javapromise.async.task.versioned.VersionedResult;
@@ -13,7 +14,7 @@ import java.util.Random;
 
 public class TestVersionedTask {
     static final long sts = System.currentTimeMillis();
-    static final Random random = new Random();
+    static final Random random = new Random(System.currentTimeMillis());
 
     static class status {
         final int version;
@@ -29,20 +30,22 @@ public class TestVersionedTask {
         }
     }
 
+    <T> PromiseJob<T> buildTask(T v) {
+        return (rs, re) -> Async.Delay(Duration.ofSeconds(1)).Then(value -> {
+            rs.Resolve(v);
+            return null;
+        });
+    }
+
     @Test
     void test() {
         System.out.println("start " +
                 new SimpleDateFormat("yyyy / MM / dd | HH : mm : ss . SSS")
                         .format(new Date(sts))
         );
-        VersionedTask<Long> clock = new VersionedTask<>((resolver, rejector) ->
-                Async.Delay(Duration.ofSeconds(1)).Then(value -> {
-                    resolver.Resolve(System.currentTimeMillis());
-                    return null;
-                })
-        );
+        VersionedTask<String> clock = new VersionedTask<>(buildTask("hello"));
         final Throwable retry = new Throwable("失效啦，请重试");
-        final PromiseFulfilledListener<VersionedResult<Long>, String> format = value -> {
+        final PromiseFulfilledListener<VersionedResult<String>, String> format = value -> {
             status stat = new status(value.Version);
             if (stat.offset > stat.versionPlusOne * 1100L) {
                 System.out.println(stat.description + "(miss)");
@@ -51,14 +54,15 @@ public class TestVersionedTask {
             if (random.nextInt(5) == 0) {
                 throw new Throwable(stat.description + "(failed)");
             }
-            return stat.description + "(confirmed)";
+            return stat.description + "(confirmed)" + value.Result;
         };
         final PromiseFulfilledListener<String, Object> print = value -> {
             System.out.println(value);
             return null;
         };
+        String[] words = new String[]{"A", "B", "C", "D", "E"};
         new TimedTask(Duration.ofMillis(200), (resolver, rejector) -> {
-            VersionedPromise<Long> result = clock.Perform(); // 首次尝试
+            VersionedPromise<String> result = clock.Perform(); // 首次尝试
             status stat = new status(result.Version);
             System.out.println(stat.description + "(try)");
             result.Promise
@@ -66,7 +70,10 @@ public class TestVersionedTask {
                     .Then(print) // 如果没有任何异常就继续打印
                     .Catch(reason -> {
                         if (reason == retry) { // 捕获重试异常
-                            VersionedPromise<Long> newResult = clock.Perform(result.Version);
+                            VersionedPromise<String> newResult = clock.Perform(
+                                    result.Version,
+                                    buildTask(words[random.nextInt(words.length)])
+                            );
                             status newStat = new status(newResult.Version);
                             System.out.println(newStat.description + "(retry)");
                             return newResult.Promise // 重试

@@ -22,7 +22,11 @@ public class OnceTask<T> {
         this(job, null);
     }
 
-    public Promise<T> Do() {
+    public OnceTask() {
+        this(null, null);
+    }
+
+    public Promise<T> Do(PromiseJob<T> job) {
         return new Promise<>((resolver, rejector) -> ExecutorKt.onReceive(promise, v -> {
             if (v == null) {
                 v = new Promise<>(job, semaphore);
@@ -30,6 +34,10 @@ public class OnceTask<T> {
             ExecutorKt.trySend(promise, v);
             resolver.Resolve(v);
         }, ExecutorKt.noErrorContinuation()));
+    }
+
+    public Promise<T> Do() {
+        return Do(job);
     }
 
     public void Cancel() {
