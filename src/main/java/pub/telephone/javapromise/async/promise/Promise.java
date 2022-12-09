@@ -74,7 +74,7 @@ public class Promise<T> {
         return this;
     }
 
-    public static <T> void AwaitAll(List<Promise<T>> all) {
+    public static <T> void AwaitAll(Iterable<? extends Promise<T>> all) {
         if (all != null) {
             for (Promise<T> promise : all) {
                 promise.Await();
