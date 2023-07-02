@@ -10,12 +10,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class TimedTask {
+    static final Throwable archivedError = new Throwable("定时任务已归档");
     final AtomicReference<Duration> interval;
-    final PromiseJob<Boolean> job;
+    final PromiseCancellableJob<Boolean> job;
     final PromiseSemaphore semaphore;
     final boolean lifeLimited;
     final Channel<Integer> lifeTimes;
     final Promise<Integer> promise;
+    final PromiseCancelledBroadcaster cancelledBroadcaster = new PromiseCancelledBroadcaster();
     final Channel<token> token = ExecutorKt.newChannel(1);
     final Channel<token> block = ExecutorKt.newChannel(1);
     final Channel<Unit> archived = ExecutorKt.newChannel(Channel.RENDEZVOUS);
@@ -26,9 +28,7 @@ public class TimedTask {
     final AtomicInteger succeededTimes = new AtomicInteger(0);
     final Channel<Unit> started = ExecutorKt.newChannel(1);
 
-    static final Throwable archivedError = new Throwable("定时任务已归档");
-
-    protected TimedTask(Duration interval, PromiseJob<Boolean> job, boolean lifeLimited, int lifeTimes, PromiseSemaphore semaphore) {
+    protected TimedTask(Duration interval, PromiseCancellableJob<Boolean> job, boolean lifeLimited, int lifeTimes, PromiseSemaphore semaphore) {
         this.interval = new AtomicReference<>(interval);
         this.job = job;
         this.lifeLimited = lifeLimited;
@@ -47,18 +47,34 @@ public class TimedTask {
     }
 
     public TimedTask(Duration interval, PromiseJob<Boolean> job) {
+        this(interval, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), false, 0, null);
+    }
+
+    public TimedTask(Duration interval, PromiseCancellableJob<Boolean> job) {
         this(interval, job, false, 0, null);
     }
 
     public TimedTask(Duration interval, PromiseJob<Boolean> job, PromiseSemaphore semaphore) {
+        this(interval, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), false, 0, semaphore);
+    }
+
+    public TimedTask(Duration interval, PromiseCancellableJob<Boolean> job, PromiseSemaphore semaphore) {
         this(interval, job, false, 0, semaphore);
     }
 
     public TimedTask(Duration interval, PromiseJob<Boolean> job, int times) {
+        this(interval, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), true, times, null);
+    }
+
+    public TimedTask(Duration interval, PromiseCancellableJob<Boolean> job, int times) {
         this(interval, job, true, times, null);
     }
 
     public TimedTask(Duration interval, PromiseJob<Boolean> job, int times, PromiseSemaphore semaphore) {
+        this(interval, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), true, times, semaphore);
+    }
+
+    public TimedTask(Duration interval, PromiseCancellableJob<Boolean> job, int times, PromiseSemaphore semaphore) {
         this(interval, job, true, times, semaphore);
     }
 
@@ -101,6 +117,7 @@ public class TimedTask {
         return modify((resolver, rejector) -> {
             promise.Cancel();
             ExecutorKt.trySend(cancelled);
+            cancelledBroadcaster.Broadcast();
             archived.close(null);
             resolver.Resolve(null);
         });
@@ -217,7 +234,11 @@ public class TimedTask {
 
     void run() {
         prepare()
-                .Then((PromiseFulfilledListener<Object, Boolean>) value -> new Promise<>(job, semaphore))
+                .Then((PromiseFulfilledListener<Object, Boolean>) value -> {
+                    Promise<Boolean> p = new Promise<>(job, semaphore);
+                    cancelledBroadcaster.Listen(p::Cancel);
+                    return p;
+                })
                 .Then((PromiseFulfilledListener<Boolean, Boolean>) value -> {
                     succeededTimes.incrementAndGet();
                     return value;
@@ -235,6 +256,10 @@ public class TimedTask {
                     return d == null ? null : Async.Delay(d);
                 })
                 .Then(value12 -> checkAlive(false))
+                .Finally(() -> {
+                    cancelledBroadcaster.Clear();
+                    return null;
+                })
                 .Then(value13 -> {
                     TimedTask.this.run();
                     return null;

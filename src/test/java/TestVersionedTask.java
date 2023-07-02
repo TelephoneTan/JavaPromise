@@ -16,20 +16,6 @@ public class TestVersionedTask {
     static final long sts = System.currentTimeMillis();
     static final Random random = new Random(System.currentTimeMillis());
 
-    static class status {
-        final int version;
-        final int versionPlusOne;
-        final long offset;
-        final String description;
-
-        public status(int version) {
-            this.version = version;
-            this.versionPlusOne = version + 1;
-            this.offset = System.currentTimeMillis() - sts;
-            this.description = String.format("v%d : %d", versionPlusOne, offset);
-        }
-    }
-
     <T> PromiseJob<T> buildTask(T v) {
         return (rs, re) -> Async.Delay(Duration.ofSeconds(1)).Then(value -> {
             rs.Resolve(v);
@@ -104,5 +90,19 @@ public class TestVersionedTask {
             resolver.Resolve(true);
         }).Start().Await();
         Async.Delay(Duration.ofHours(5)).Await();
+    }
+
+    static class status {
+        final int version;
+        final int versionPlusOne;
+        final long offset;
+        final String description;
+
+        public status(int version) {
+            this.version = version;
+            this.versionPlusOne = version + 1;
+            this.offset = System.currentTimeMillis() - sts;
+            this.description = String.format("v%d : %d", versionPlusOne, offset);
+        }
     }
 }

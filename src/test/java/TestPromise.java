@@ -1,6 +1,7 @@
-import pub.telephone.javapromise.async.promise.Promise;
-import pub.telephone.javapromise.async.promise.PromiseSemaphore;
 import org.junit.jupiter.api.Test;
+import pub.telephone.javapromise.async.promise.Promise;
+import pub.telephone.javapromise.async.promise.PromiseCompoundFulfilledListener;
+import pub.telephone.javapromise.async.promise.PromiseSemaphore;
 
 import java.time.Duration;
 import java.util.LinkedList;
@@ -30,7 +31,7 @@ public class TestPromise {
                     )
             ;
             promise = promise.Then(value -> {
-                System.out.println("" + ii + " -> x = " + res.incrementAndGet());
+                System.out.println(ii + " -> x = " + res.incrementAndGet());
                 return null;
             });
             allWork.add(promise);
@@ -39,7 +40,7 @@ public class TestPromise {
                 allWork.add(promise);
             }
         }
-        Promise.ThenAll(null, allWork, allWork).Await();
+        Promise.ThenAll((PromiseCompoundFulfilledListener<String, String, Object>) null, allWork, allWork).Await();
         System.out.printf("执行 %d 个任务，最后的结果是 %d\n", num, res.get());
         try {
             Thread.sleep(60000_000);

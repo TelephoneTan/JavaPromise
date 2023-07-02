@@ -52,14 +52,30 @@ interface RunWithValueThrowsThrowable<E> {
     fun run(v: E)
 }
 
-suspend fun awaitClose(channel: Channel<Unit>, latch: CountDownLatch, then: RunThrowsThrowable) {
+suspend fun awaitClose(
+        channel: Channel<Unit>,
+        latch: CountDownLatch,
+        then: RunThrowsThrowable,
+        outerChannel: Channel<Unit>?,
+        outerLatch: CountDownLatch?,
+        outerThen: RunThrowsThrowable?,
+) {
     val l = CountDownLatch(1)
     l.countDown()
-    @Suppress("ControlFlowWithEmptyBody")
-    for (x in channel);
-    l.await()
-    latch.await()
-    then.run()
+    select {
+        if (outerChannel != null && outerLatch != null && outerThen != null) {
+            outerChannel.onReceiveCatching {
+                l.await()
+                outerLatch.await()
+                outerThen.run()
+            }
+        }
+        channel.onReceiveCatching {
+            l.await()
+            latch.await()
+            then.run()
+        }
+    }
 }
 
 suspend fun withLock(mutex: Mutex, then: RunThrowsThrowable) {
@@ -85,10 +101,10 @@ suspend fun withLock(mutexList: Array<Mutex>, then: RunThrowsThrowable) {
 }
 
 suspend fun awaitGroup(
-    channel: Channel<Unit>,
-    num: Int,
-    latch: CountDownLatch,
-    then: RunThrowsThrowable
+        channel: Channel<Unit>,
+        num: Int,
+        latch: CountDownLatch,
+        then: RunThrowsThrowable
 ) {
     val l = CountDownLatch(1)
     l.countDown()
@@ -101,8 +117,8 @@ suspend fun awaitGroup(
 }
 
 fun readFromOrSendTo(
-    from: Channel<Unit>,
-    to: Channel<Unit>
+        from: Channel<Unit>,
+        to: Channel<Unit>
 ) {
     if (from.tryReceive().isFailure) {
         to.trySend(Unit)
@@ -178,10 +194,10 @@ suspend fun <E> onReceive(from: Channel<E>, then: RunWithValueThrowsThrowable<E>
 }
 
 suspend fun <E> onReceive(
-    from: Channel<E>,
-    then: RunWithValueThrowsThrowable<E>,
-    quit: Channel<Unit>,
-    quitThen: RunThrowsThrowable
+        from: Channel<E>,
+        then: RunWithValueThrowsThrowable<E>,
+        quit: Channel<Unit>,
+        quitThen: RunThrowsThrowable
 ) {
     val l = CountDownLatch(1)
     l.countDown()
@@ -198,12 +214,12 @@ suspend fun <E> onReceive(
 }
 
 suspend fun <A, B, C> onReceive(
-    one: Channel<A>,
-    oneThen: RunWithValueThrowsThrowable<A>,
-    two: Channel<B>,
-    twoThen: RunWithValueThrowsThrowable<B>,
-    three: Channel<C>,
-    threeThen: RunWithValueThrowsThrowable<C>
+        one: Channel<A>,
+        oneThen: RunWithValueThrowsThrowable<A>,
+        two: Channel<B>,
+        twoThen: RunWithValueThrowsThrowable<B>,
+        three: Channel<C>,
+        threeThen: RunWithValueThrowsThrowable<C>
 ) {
     val l = CountDownLatch(1)
     l.countDown()

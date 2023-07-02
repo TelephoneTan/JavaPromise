@@ -2,72 +2,91 @@ package pub.telephone.javapromise.async.task.versioned;
 
 import pub.telephone.javapromise.async.promise.*;
 
-public class VersionedTask<T> {
-    VersionedPromise<T> current;
-    final PromiseJob<T> job;
-    final PromiseSemaphore semaphore;
-    boolean cancelled;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
-    public VersionedTask(PromiseJob<T> job, PromiseSemaphore semaphore) {
-        current = null;
-        cancelled = false;
+public class VersionedTask<T> {
+    final PromiseCancellableJob<T> job;
+    final PromiseSemaphore semaphore;
+    final PromiseCancelledBroadcaster cancelledBroadcaster = new PromiseCancelledBroadcaster();
+    final AtomicReference<VersionedPromise<T>> current = new AtomicReference<>();
+    final AtomicBoolean cancelled = new AtomicBoolean();
+
+    public VersionedTask(PromiseCancellableJob<T> job, PromiseSemaphore semaphore) {
         this.job = job;
         this.semaphore = semaphore;
-        //
-        synchronized (this) {
-            ;
-        }
+    }
+
+    public VersionedTask(PromiseJob<T> job, PromiseSemaphore semaphore) {
+        this((resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), semaphore);
     }
 
     public VersionedTask(PromiseJob<T> job) {
         this(job, null);
     }
 
-    public VersionedTask() {
-        this(null, null);
+    public VersionedTask(PromiseCancellableJob<T> job) {
+        this(job, null);
     }
 
-    synchronized public void Cancel() {
-        if (cancelled) {
+    public VersionedTask() {
+        this((PromiseCancellableJob<T>) null, null);
+    }
+
+    public void Cancel() {
+        if (!cancelled.compareAndSet(false, true)) {
             return;
         }
-        cancelled = true;
-        if (current != null) {
-            current.Promise.Cancel();
-        }
-        current = new VersionedPromise<>(current == null ? 0 : current.Version + 1, Promise.Cancelled());
+        cancelledBroadcaster.Broadcast();
+        current.updateAndGet(prev -> new VersionedPromise<>(prev == null ? 0 : prev.Version + 1, Promise.Cancelled()));
     }
 
-    synchronized VersionedPromise<T> perform(Integer version, PromiseJob<T> job) {
-        if (current == null || (version != null && version == current.Version)) {
-            int nextVersion = current == null ? 0 : current.Version + 1;
-            return current = new VersionedPromise<>(
-                    nextVersion,
-                    cancelled ?
-                            Promise.Cancelled() :
-                            new Promise<>((resolver, rejector) -> resolver.Resolve(
-                                    new Promise<>(job, semaphore)
-                                            .Then(value -> new VersionedResult<>(nextVersion, value))
-                            ))
-            );
-        } else {
-            return current;
-        }
+    protected VersionedPromise<T> Perform(Integer version, PromiseCancellableJob<T> job) {
+        return current.updateAndGet(prev -> {
+            if (prev == null || (version != null && version == prev.Version)) {
+                int nextVersion = prev == null ? 0 : prev.Version + 1;
+                return new VersionedPromise<>(
+                        nextVersion,
+                        cancelled.get() ?
+                                Promise.Cancelled() :
+                                new Promise<>((resolver, rejector) -> {
+                                    Promise<T> p = new Promise<>(job, semaphore);
+                                    cancelledBroadcaster.Listen(p::Cancel);
+                                    resolver.Resolve(
+                                            p.Finally(() -> {
+                                                cancelledBroadcaster.Clear();
+                                                return null;
+                                            }).Then(value -> new VersionedResult<>(nextVersion, value))
+                                    );
+                                })
+                );
+            } else {
+                return prev;
+            }
+        });
     }
 
     public VersionedPromise<T> Perform(PromiseJob<T> job) {
-        return perform(null, job);
+        return Perform(null, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector));
+    }
+
+    public VersionedPromise<T> Perform(PromiseCancellableJob<T> job) {
+        return Perform(null, job);
     }
 
     public VersionedPromise<T> Perform() {
-        return perform(null, job);
+        return Perform(null, job);
     }
 
     public VersionedPromise<T> Perform(int version, PromiseJob<T> job) {
-        return perform(version, job);
+        return Perform(version, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector));
+    }
+
+    public VersionedPromise<T> Perform(int version, PromiseCancellableJob<T> job) {
+        return Perform((Integer) version, job);
     }
 
     public VersionedPromise<T> Perform(int version) {
-        return perform(version, job);
+        return Perform(version, job);
     }
 }
