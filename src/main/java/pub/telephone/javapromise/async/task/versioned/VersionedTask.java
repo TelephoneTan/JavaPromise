@@ -8,29 +8,61 @@ import java.util.concurrent.atomic.AtomicReference;
 public class VersionedTask<T> {
     final PromiseCancellableJob<T> job;
     final PromiseSemaphore semaphore;
+    final PromiseCancelledBroadcast scopeCancelledBroadcast;
+    final Object scopeUnListenKey;
     final PromiseCancelledBroadcaster cancelledBroadcaster = new PromiseCancelledBroadcaster();
     final AtomicReference<VersionedPromise<T>> current = new AtomicReference<>();
     final AtomicBoolean cancelled = new AtomicBoolean();
 
     public VersionedTask(PromiseCancellableJob<T> job, PromiseSemaphore semaphore) {
+        this(null, job, semaphore);
+    }
+
+    public VersionedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableJob<T> job, PromiseSemaphore semaphore) {
         this.job = job;
         this.semaphore = semaphore;
+        this.scopeCancelledBroadcast = scopeCancelledBroadcast;
+        this.scopeUnListenKey = this.scopeCancelledBroadcast != null ?
+                this.scopeCancelledBroadcast.Listen(this::Cancel) :
+                null;
     }
 
     public VersionedTask(PromiseJob<T> job, PromiseSemaphore semaphore) {
-        this((resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), semaphore);
+        this(null, job, semaphore);
+    }
+
+    public VersionedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseJob<T> job, PromiseSemaphore semaphore) {
+        this(scopeCancelledBroadcast, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), semaphore);
     }
 
     public VersionedTask(PromiseJob<T> job) {
-        this(job, null);
+        this(null, job);
+    }
+
+    public VersionedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseJob<T> job) {
+        this(scopeCancelledBroadcast, job, null);
     }
 
     public VersionedTask(PromiseCancellableJob<T> job) {
-        this(job, null);
+        this(null, job);
+    }
+
+    public VersionedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableJob<T> job) {
+        this(scopeCancelledBroadcast, job, null);
     }
 
     public VersionedTask() {
-        this((PromiseCancellableJob<T>) null, null);
+        this((PromiseCancelledBroadcast) null);
+    }
+
+    public VersionedTask(PromiseCancelledBroadcast scopeCancelledBroadcast) {
+        this(scopeCancelledBroadcast, (PromiseCancellableJob<T>) null, null);
+    }
+
+    void leaveScope() {
+        if (this.scopeCancelledBroadcast != null) {
+            this.scopeCancelledBroadcast.UnListen(this.scopeUnListenKey);
+        }
     }
 
     public void Cancel() {
@@ -38,6 +70,7 @@ public class VersionedTask<T> {
             return;
         }
         cancelledBroadcaster.Broadcast();
+        leaveScope();
         current.updateAndGet(prev -> new VersionedPromise<>(prev == null ? 0 : prev.Version + 1, Promise.Cancelled()));
     }
 
@@ -56,7 +89,7 @@ public class VersionedTask<T> {
                                             p.Finally(() -> {
                                                 cancelledBroadcaster.Clear();
                                                 return null;
-                                            }).Then(value -> new VersionedResult<>(nextVersion, value))
+                                            }).Then(value -> p.Then(value1 -> new VersionedResult<>(nextVersion, value1)))
                                     );
                                 })
                 );

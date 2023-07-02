@@ -1,6 +1,7 @@
 import org.junit.jupiter.api.Test;
 import pub.telephone.javapromise.async.Async;
 import pub.telephone.javapromise.async.promise.Promise;
+import pub.telephone.javapromise.async.promise.PromiseCancelledBroadcaster;
 import pub.telephone.javapromise.async.task.shared.SharedTask;
 import pub.telephone.javapromise.async.task.timed.TimedTask;
 
@@ -15,7 +16,8 @@ public class TestCancellableSharedTask {
     }
 
     void test1() {
-        SharedTask<Object> t = new SharedTask<>((resolver, rejector, cancelledBroadcast) -> {
+        PromiseCancelledBroadcaster broadcaster = new PromiseCancelledBroadcaster();
+        SharedTask<Object> t = new SharedTask<>(broadcaster, (resolver, rejector, cancelledBroadcast) -> {
             cancelledBroadcast.Listen(() -> System.out.println("内部收到取消广播"));
             while (cancelledBroadcast.IsActive.get()) {
                 System.out.println("hello, world");
@@ -25,16 +27,17 @@ public class TestCancellableSharedTask {
         });
         t.Do().ForCancel(() -> System.out.println("已取消"));
         new TimedTask(Duration.ZERO, (resolver, rejector) -> {
-            t.Cancel();
+            broadcaster.Broadcast();
             resolver.Resolve(false);
         }).Start(Duration.ofMillis(2500));
         Async.Delay(Duration.ofSeconds(6)).Await();
     }
 
     void test2() {
-        SharedTask<Object> p = new SharedTask<>((resolver, rejector, cancelledBroadcast) -> {
+        PromiseCancelledBroadcaster broadcaster = new PromiseCancelledBroadcaster();
+        SharedTask<Object> p = new SharedTask<>(broadcaster, (resolver, rejector, cancelledBroadcast) -> {
             cancelledBroadcast.Listen(() -> cancelledBroadcast.Listen(() -> System.out.println("内部 1 收到取消广播")));
-            resolver.Resolve(new Promise<>((resolver1, rejector1, cancelledBroadcast1) -> {
+            resolver.Resolve(new Promise<>(cancelledBroadcast, (resolver1, rejector1, cancelledBroadcast1) -> {
                         cancelledBroadcast1.Listen(() -> System.out.println("内部 2 收到取消广播"));
                         while (cancelledBroadcast1.IsActive.get()) {
                             System.out.println("hello, world");
@@ -42,12 +45,12 @@ public class TestCancellableSharedTask {
                         }
                         System.out.println("内部 2 检测到取消");
                     })
-//                    .ForCancel(() -> System.out.println("2 已取消"))
+                            .ForCancel(() -> System.out.println("2 已取消"))
             );
         });
         p.Do().ForCancel(() -> System.out.println("1 已取消"));
         new TimedTask(Duration.ZERO, (resolver, rejector) -> {
-            p.Cancel();
+            broadcaster.Broadcast();
             resolver.Resolve(false);
         }).Start(Duration.ofMillis(2500));
         Async.Delay(Duration.ofSeconds(6)).Await();

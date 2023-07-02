@@ -26,27 +26,40 @@ public class Promise<T> {
     final CountDownLatch go = new CountDownLatch(1);
     final PromiseSemaphore semaphore;
     final baseJob<T> job;
+    final PromiseCancelledBroadcast scopeCancelledBroadcast;
+    final Object scopeUnListenKey;
     final AtomicInteger timeoutSN = new AtomicInteger(0);
     T value;
     Throwable reason;
 
-    protected Promise() {
+    protected Promise(@Nullable PromiseCancelledBroadcast scopeCancelledBroadcast) {
         this.semaphore = null;
         this.job = null;
+        this.scopeCancelledBroadcast = scopeCancelledBroadcast;
+        this.scopeUnListenKey = null;
     }
 
-    protected Promise(baseJob<T> job, PromiseSemaphore semaphore, boolean shouldWrapJobWithSemaphore) {
+    protected Promise(@Nullable PromiseCancelledBroadcast scopeCancelledBroadcast, baseJob<T> job, PromiseSemaphore semaphore, boolean shouldWrapJobWithSemaphore) {
         this.semaphore = semaphore;
         this.job = (!shouldWrapJobWithSemaphore || semaphore == null) ? job : (resolver, rejector, cancelledBroadcast, self) ->
                 semaphore.Acquire(
                         () -> job.Do(resolver, rejector, cancelledBroadcast, self),
                         ExecutorKt.normalContinuation(Promise.this::fail)
                 );
+        this.scopeCancelledBroadcast = scopeCancelledBroadcast;
+        this.scopeUnListenKey = this.scopeCancelledBroadcast != null ?
+                this.scopeCancelledBroadcast.Listen(Promise.this::Cancel) :
+                null;
         go();
     }
 
     public Promise(PromiseJob<T> job) {
+        this(null, job);
+    }
+
+    public Promise(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseJob<T> job) {
         this(
+                scopeCancelledBroadcast,
                 (resolver, rejector, cancelledBroadcast, self) -> job.Do(resolver, rejector),
                 null,
                 false
@@ -54,7 +67,12 @@ public class Promise<T> {
     }
 
     public Promise(PromiseCancellableJob<T> job) {
+        this(null, job);
+    }
+
+    public Promise(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableJob<T> job) {
         this(
+                scopeCancelledBroadcast,
                 (resolver, rejector, cancelledBroadcast, self) -> job.Do(resolver, rejector, cancelledBroadcast),
                 null,
                 false
@@ -62,7 +80,12 @@ public class Promise<T> {
     }
 
     public Promise(PromiseJob<T> job, PromiseSemaphore semaphore) {
+        this(null, job, semaphore);
+    }
+
+    public Promise(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseJob<T> job, PromiseSemaphore semaphore) {
         this(
+                scopeCancelledBroadcast,
                 (resolver, rejector, cancelledBroadcast, self) -> job.Do(resolver, rejector),
                 semaphore,
                 true
@@ -70,7 +93,12 @@ public class Promise<T> {
     }
 
     public Promise(PromiseCancellableJob<T> job, PromiseSemaphore semaphore) {
+        this(null, job, semaphore);
+    }
+
+    public Promise(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableJob<T> job, PromiseSemaphore semaphore) {
         this(
+                scopeCancelledBroadcast,
                 (resolver, rejector, cancelledBroadcast, self) -> job.Do(resolver, rejector, cancelledBroadcast),
                 semaphore,
                 true
@@ -135,8 +163,8 @@ public class Promise<T> {
         }
     }
 
-    static <S, T, U> Promise<S> dependOn(PromiseSemaphore semaphore, baseCompoundFulfilledListener<T, U, S> f, baseRejectedListener<S> r, PromiseCancelledListener c, baseSettledListener s, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromiseList) {
-        return new Promise<>((resolver, rejector, cancelledBroadcast, self) -> {
+    static <S, T, U> Promise<S> dependOn(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, baseCompoundFulfilledListener<T, U, S> f, baseRejectedListener<S> r, PromiseCancelledListener c, baseSettledListener s, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromiseList) {
+        return new Promise<>(scopeCancelledBroadcast, (resolver, rejector, cancelledBroadcast, self) -> {
             int requiredNum = requiredPromiseList == null ? 0 : requiredPromiseList.size();
             int optionalNum = optionalPromiseList == null ? 0 : optionalPromiseList.size();
             int totalNum = requiredNum + optionalNum;
@@ -293,131 +321,255 @@ public class Promise<T> {
     }
 
     public static <S, T> Promise<S> ThenAll(PromiseCompoundFulfilledListener<T, Object, S> onFulfilled, List<Promise<T>> requiredPromiseList) {
-        return dependOn(null, (value, cancelledBroadcast) -> onFulfilled.OnFulfilled(value), null, null, null, requiredPromiseList, null);
+        return ThenAll((PromiseCancelledBroadcast) null, onFulfilled, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> ThenAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCompoundFulfilledListener<T, Object, S> onFulfilled, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, null, (value, cancelledBroadcast) -> onFulfilled.OnFulfilled(value), null, null, null, requiredPromiseList, null);
     }
 
     public static <S, T> Promise<S> ThenAll(PromiseCancellableCompoundFulfilledListener<T, Object, S> onFulfilled, List<Promise<T>> requiredPromiseList) {
-        return dependOn(null, onFulfilled::OnFulfilled, null, null, null, requiredPromiseList, null);
+        return ThenAll((PromiseCancelledBroadcast) null, onFulfilled, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> ThenAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableCompoundFulfilledListener<T, Object, S> onFulfilled, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, null, onFulfilled::OnFulfilled, null, null, null, requiredPromiseList, null);
     }
 
     public static <S, T> Promise<S> ThenAll(PromiseSemaphore semaphore, PromiseCompoundFulfilledListener<T, Object, S> onFulfilled, List<Promise<T>> requiredPromiseList) {
-        return dependOn(semaphore, (value, cancelledBroadcast) -> onFulfilled.OnFulfilled(value), null, null, null, requiredPromiseList, null);
+        return ThenAll(null, semaphore, onFulfilled, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> ThenAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseCompoundFulfilledListener<T, Object, S> onFulfilled, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, semaphore, (value, cancelledBroadcast) -> onFulfilled.OnFulfilled(value), null, null, null, requiredPromiseList, null);
     }
 
     public static <S, T> Promise<S> ThenAll(PromiseSemaphore semaphore, PromiseCancellableCompoundFulfilledListener<T, Object, S> onFulfilled, List<Promise<T>> requiredPromiseList) {
-        return dependOn(semaphore, onFulfilled::OnFulfilled, null, null, null, requiredPromiseList, null);
+        return ThenAll(null, semaphore, onFulfilled, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> ThenAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseCancellableCompoundFulfilledListener<T, Object, S> onFulfilled, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, semaphore, onFulfilled::OnFulfilled, null, null, null, requiredPromiseList, null);
     }
 
     public static <S, T, U> Promise<S> ThenAll(PromiseCompoundFulfilledListener<T, U, S> onFulfilled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(null, (value, cancelledBroadcast) -> onFulfilled.OnFulfilled(value), null, null, null, requiredPromiseList, optionalPromises);
+        return ThenAll((PromiseCancelledBroadcast) null, onFulfilled, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> ThenAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCompoundFulfilledListener<T, U, S> onFulfilled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, null, (value, cancelledBroadcast) -> onFulfilled.OnFulfilled(value), null, null, null, requiredPromiseList, optionalPromises);
     }
 
     public static <S, T, U> Promise<S> ThenAll(PromiseCancellableCompoundFulfilledListener<T, U, S> onFulfilled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(null, onFulfilled::OnFulfilled, null, null, null, requiredPromiseList, optionalPromises);
+        return ThenAll((PromiseCancelledBroadcast) null, onFulfilled, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> ThenAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableCompoundFulfilledListener<T, U, S> onFulfilled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, null, onFulfilled::OnFulfilled, null, null, null, requiredPromiseList, optionalPromises);
     }
 
     public static <S, T, U> Promise<S> ThenAll(PromiseSemaphore semaphore, PromiseCompoundFulfilledListener<T, U, S> onFulfilled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(semaphore, (value, cancelledBroadcast) -> onFulfilled.OnFulfilled(value), null, null, null, requiredPromiseList, optionalPromises);
+        return ThenAll(null, semaphore, onFulfilled, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> ThenAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseCompoundFulfilledListener<T, U, S> onFulfilled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, semaphore, (value, cancelledBroadcast) -> onFulfilled.OnFulfilled(value), null, null, null, requiredPromiseList, optionalPromises);
     }
 
     public static <S, T, U> Promise<S> ThenAll(PromiseSemaphore semaphore, PromiseCancellableCompoundFulfilledListener<T, U, S> onFulfilled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(semaphore, onFulfilled::OnFulfilled, null, null, null, requiredPromiseList, optionalPromises);
+        return ThenAll(null, semaphore, onFulfilled, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> ThenAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseCancellableCompoundFulfilledListener<T, U, S> onFulfilled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, semaphore, onFulfilled::OnFulfilled, null, null, null, requiredPromiseList, optionalPromises);
     }
 
     public static <S, T> Promise<S> CatchAll(PromiseRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList) {
-        return dependOn(null, null, (value, cancelledBroadcast) -> onRejected.OnRejected(value), null, null, requiredPromiseList, null);
+        return CatchAll((PromiseCancelledBroadcast) null, onRejected, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> CatchAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, null, null, (value, cancelledBroadcast) -> onRejected.OnRejected(value), null, null, requiredPromiseList, null);
     }
 
     public static <S, T> Promise<S> CatchAll(PromiseCancellableRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList) {
-        return dependOn(null, null, onRejected::OnRejected, null, null, requiredPromiseList, null);
+        return CatchAll((PromiseCancelledBroadcast) null, onRejected, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> CatchAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, null, null, onRejected::OnRejected, null, null, requiredPromiseList, null);
     }
 
     public static <S, T> Promise<S> CatchAll(PromiseSemaphore semaphore, PromiseRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList) {
-        return dependOn(semaphore, null, (value, cancelledBroadcast) -> onRejected.OnRejected(value), null, null, requiredPromiseList, null);
+        return CatchAll(null, semaphore, onRejected, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> CatchAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, semaphore, null, (value, cancelledBroadcast) -> onRejected.OnRejected(value), null, null, requiredPromiseList, null);
     }
 
     public static <S, T> Promise<S> CatchAll(PromiseSemaphore semaphore, PromiseCancellableRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList) {
-        return dependOn(semaphore, null, onRejected::OnRejected, null, null, requiredPromiseList, null);
+        return CatchAll(null, semaphore, onRejected, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> CatchAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseCancellableRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, semaphore, null, onRejected::OnRejected, null, null, requiredPromiseList, null);
     }
 
     public static <S, T, U> Promise<S> CatchAll(PromiseRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(null, null, (value, cancelledBroadcast) -> onRejected.OnRejected(value), null, null, requiredPromiseList, optionalPromises);
+        return CatchAll((PromiseCancelledBroadcast) null, onRejected, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> CatchAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, null, null, (value, cancelledBroadcast) -> onRejected.OnRejected(value), null, null, requiredPromiseList, optionalPromises);
     }
 
     public static <S, T, U> Promise<S> CatchAll(PromiseCancellableRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(null, null, onRejected::OnRejected, null, null, requiredPromiseList, optionalPromises);
+        return CatchAll((PromiseCancelledBroadcast) null, onRejected, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> CatchAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, null, null, onRejected::OnRejected, null, null, requiredPromiseList, optionalPromises);
     }
 
     public static <S, T, U> Promise<S> CatchAll(PromiseSemaphore semaphore, PromiseRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(semaphore, null, (value, cancelledBroadcast) -> onRejected.OnRejected(value), null, null, requiredPromiseList, optionalPromises);
+        return CatchAll(null, semaphore, onRejected, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> CatchAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, semaphore, null, (value, cancelledBroadcast) -> onRejected.OnRejected(value), null, null, requiredPromiseList, optionalPromises);
     }
 
     public static <S, T, U> Promise<S> CatchAll(PromiseSemaphore semaphore, PromiseCancellableRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(semaphore, null, onRejected::OnRejected, null, null, requiredPromiseList, optionalPromises);
+        return CatchAll(null, semaphore, onRejected, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> CatchAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseCancellableRejectedListener<S> onRejected, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, semaphore, null, onRejected::OnRejected, null, null, requiredPromiseList, optionalPromises);
     }
 
     public static <S, T> Promise<S> ForCancelAll(PromiseCancelledListener onCancelled, List<Promise<T>> requiredPromiseList) {
-        return dependOn(null, null, null, onCancelled, null, requiredPromiseList, null);
+        return ForCancelAll((PromiseCancelledBroadcast) null, onCancelled, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> ForCancelAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancelledListener onCancelled, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, null, null, null, onCancelled, null, requiredPromiseList, null);
     }
 
     public static <S, T> Promise<S> ForCancelAll(PromiseSemaphore semaphore, PromiseCancelledListener onCancelled, List<Promise<T>> requiredPromiseList) {
-        return dependOn(semaphore, null, null, onCancelled, null, requiredPromiseList, null);
+        return ForCancelAll(null, semaphore, onCancelled, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> ForCancelAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseCancelledListener onCancelled, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, semaphore, null, null, onCancelled, null, requiredPromiseList, null);
     }
 
     public static <S, T, U> Promise<S> ForCancelAll(PromiseCancelledListener onCancelled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(null, null, null, onCancelled, null, requiredPromiseList, optionalPromises);
+        return ForCancelAll((PromiseCancelledBroadcast) null, onCancelled, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> ForCancelAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancelledListener onCancelled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, null, null, null, onCancelled, null, requiredPromiseList, optionalPromises);
     }
 
     public static <S, T, U> Promise<S> ForCancelAll(PromiseSemaphore semaphore, PromiseCancelledListener onCancelled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(semaphore, null, null, onCancelled, null, requiredPromiseList, optionalPromises);
+        return ForCancelAll(null, semaphore, onCancelled, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> ForCancelAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseCancelledListener onCancelled, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, semaphore, null, null, onCancelled, null, requiredPromiseList, optionalPromises);
     }
 
     public static <S, T> Promise<S> FinallyAll(PromiseSettledListener onFinally, List<Promise<T>> requiredPromiseList) {
-        return dependOn(null, null, null, null, cancelledBroadcast -> onFinally.OnSettled(), requiredPromiseList, null);
+        return FinallyAll((PromiseCancelledBroadcast) null, onFinally, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> FinallyAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSettledListener onFinally, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, null, null, null, null, cancelledBroadcast -> onFinally.OnSettled(), requiredPromiseList, null);
     }
 
     public static <S, T> Promise<S> FinallyAll(PromiseCancellableSettledListener onFinally, List<Promise<T>> requiredPromiseList) {
-        return dependOn(null, null, null, null, onFinally::OnSettled, requiredPromiseList, null);
+        return FinallyAll((PromiseCancelledBroadcast) null, onFinally, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> FinallyAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableSettledListener onFinally, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, null, null, null, null, onFinally::OnSettled, requiredPromiseList, null);
     }
 
     public static <S, T> Promise<S> FinallyAll(PromiseSemaphore semaphore, PromiseSettledListener onFinally, List<Promise<T>> requiredPromiseList) {
-        return dependOn(semaphore, null, null, null, cancelledBroadcast -> onFinally.OnSettled(), requiredPromiseList, null);
+        return FinallyAll(null, semaphore, onFinally, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> FinallyAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseSettledListener onFinally, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, semaphore, null, null, null, cancelledBroadcast -> onFinally.OnSettled(), requiredPromiseList, null);
     }
 
     public static <S, T> Promise<S> FinallyAll(PromiseSemaphore semaphore, PromiseCancellableSettledListener onFinally, List<Promise<T>> requiredPromiseList) {
-        return dependOn(semaphore, null, null, null, onFinally::OnSettled, requiredPromiseList, null);
+        return FinallyAll(null, semaphore, onFinally, requiredPromiseList);
+    }
+
+    public static <S, T> Promise<S> FinallyAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseCancellableSettledListener onFinally, List<Promise<T>> requiredPromiseList) {
+        return dependOn(scopeCancelledBroadcast, semaphore, null, null, null, onFinally::OnSettled, requiredPromiseList, null);
     }
 
     public static <S, T, U> Promise<S> FinallyAll(PromiseSettledListener onFinally, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(null, null, null, null, cancelledBroadcast -> onFinally.OnSettled(), requiredPromiseList, optionalPromises);
+        return FinallyAll((PromiseCancelledBroadcast) null, onFinally, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> FinallyAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSettledListener onFinally, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, null, null, null, null, cancelledBroadcast -> onFinally.OnSettled(), requiredPromiseList, optionalPromises);
     }
 
     public static <S, T, U> Promise<S> FinallyAll(PromiseCancellableSettledListener onFinally, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(null, null, null, null, onFinally::OnSettled, requiredPromiseList, optionalPromises);
+        return FinallyAll((PromiseCancelledBroadcast) null, onFinally, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> FinallyAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableSettledListener onFinally, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, null, null, null, null, onFinally::OnSettled, requiredPromiseList, optionalPromises);
     }
 
     public static <S, T, U> Promise<S> FinallyAll(PromiseSemaphore semaphore, PromiseSettledListener onFinally, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(semaphore, null, null, null, cancelledBroadcast -> onFinally.OnSettled(), requiredPromiseList, optionalPromises);
+        return FinallyAll(null, semaphore, onFinally, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> FinallyAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseSettledListener onFinally, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, semaphore, null, null, null, cancelledBroadcast -> onFinally.OnSettled(), requiredPromiseList, optionalPromises);
     }
 
     public static <S, T, U> Promise<S> FinallyAll(PromiseSemaphore semaphore, PromiseCancellableSettledListener onFinally, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
-        return dependOn(semaphore, null, null, null, onFinally::OnSettled, requiredPromiseList, optionalPromises);
+        return FinallyAll(null, semaphore, onFinally, requiredPromiseList, optionalPromises);
+    }
+
+    public static <S, T, U> Promise<S> FinallyAll(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseSemaphore semaphore, PromiseCancellableSettledListener onFinally, List<Promise<T>> requiredPromiseList, List<Promise<U>> optionalPromises) {
+        return dependOn(scopeCancelledBroadcast, semaphore, null, null, null, onFinally::OnSettled, requiredPromiseList, optionalPromises);
     }
 
     public static <S> Promise<S> Resolve(S value) {
-        Promise<S> promise = new Promise<>();
+        return Resolve(null, value);
+    }
+
+    public static <S> Promise<S> Resolve(PromiseCancelledBroadcast scopeCancelledBroadcast, S value) {
+        Promise<S> promise = new Promise<>(scopeCancelledBroadcast);
         promise.succeed(value);
         return promise;
     }
 
     public static <S> Promise<S> Reject(Throwable reason) {
-        Promise<S> promise = new Promise<>();
+        return Reject(null, reason);
+    }
+
+    public static <S> Promise<S> Reject(PromiseCancelledBroadcast scopeCancelledBroadcast, Throwable reason) {
+        Promise<S> promise = new Promise<>(scopeCancelledBroadcast);
         promise.fail(reason);
         return promise;
     }
 
     public static <S> Promise<S> Cancelled() {
-        Promise<S> promise = new Promise<>();
+        return Cancelled(null);
+    }
+
+    public static <S> Promise<S> Cancelled(PromiseCancelledBroadcast scopeCancelledBroadcast) {
+        Promise<S> promise = new Promise<>(scopeCancelledBroadcast);
         promise.Cancel();
         return promise;
     }
@@ -428,6 +580,9 @@ public class Promise<T> {
         }
         settledLatch.countDown();
         settled.close(null);
+        if (scopeCancelledBroadcast != null) {
+            scopeCancelledBroadcast.UnListen(scopeUnListenKey);
+        }
     }
 
     void succeed(T value) {
@@ -576,59 +731,59 @@ public class Promise<T> {
     }
 
     public <S> Promise<S> Then(PromiseFulfilledListener<T, S> onFulfilled) {
-        return dependOn(null, (value, cancelledBroadcast) -> onFulfilled == null ? null : onFulfilled.OnFulfilled(value.RequiredValueList.get(0)), null, null, null, Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, null, (value, cancelledBroadcast) -> onFulfilled == null ? null : onFulfilled.OnFulfilled(value.RequiredValueList.get(0)), null, null, null, Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> Then(PromiseCancellableFulfilledListener<T, S> onFulfilled) {
-        return dependOn(null, (value, cancelledBroadcast) -> onFulfilled == null ? null : onFulfilled.OnFulfilled(value.RequiredValueList.get(0), cancelledBroadcast), null, null, null, Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, null, (value, cancelledBroadcast) -> onFulfilled == null ? null : onFulfilled.OnFulfilled(value.RequiredValueList.get(0), cancelledBroadcast), null, null, null, Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> Then(PromiseSemaphore semaphore, PromiseFulfilledListener<T, S> onFulfilled) {
-        return dependOn(semaphore, (value, cancelledBroadcast) -> onFulfilled == null ? null : onFulfilled.OnFulfilled(value.RequiredValueList.get(0)), null, null, null, Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, semaphore, (value, cancelledBroadcast) -> onFulfilled == null ? null : onFulfilled.OnFulfilled(value.RequiredValueList.get(0)), null, null, null, Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> Then(PromiseSemaphore semaphore, PromiseCancellableFulfilledListener<T, S> onFulfilled) {
-        return dependOn(semaphore, (value, cancelledBroadcast) -> onFulfilled == null ? null : onFulfilled.OnFulfilled(value.RequiredValueList.get(0), cancelledBroadcast), null, null, null, Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, semaphore, (value, cancelledBroadcast) -> onFulfilled == null ? null : onFulfilled.OnFulfilled(value.RequiredValueList.get(0), cancelledBroadcast), null, null, null, Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> Catch(PromiseRejectedListener<S> onRejected) {
-        return dependOn(null, null, (reason, cancelledBroadcast) -> onRejected.OnRejected(reason), null, null, Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, null, null, (reason, cancelledBroadcast) -> onRejected.OnRejected(reason), null, null, Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> Catch(PromiseCancellableRejectedListener<S> onRejected) {
-        return dependOn(null, null, onRejected::OnRejected, null, null, Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, null, null, onRejected::OnRejected, null, null, Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> Catch(PromiseSemaphore semaphore, PromiseRejectedListener<S> onRejected) {
-        return dependOn(semaphore, null, (reason, cancelledBroadcast) -> onRejected.OnRejected(reason), null, null, Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, semaphore, null, (reason, cancelledBroadcast) -> onRejected.OnRejected(reason), null, null, Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> Catch(PromiseSemaphore semaphore, PromiseCancellableRejectedListener<S> onRejected) {
-        return dependOn(semaphore, null, onRejected::OnRejected, null, null, Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, semaphore, null, onRejected::OnRejected, null, null, Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> ForCancel(PromiseCancelledListener onCancelled) {
-        return dependOn(null, null, null, onCancelled, null, Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, null, null, null, onCancelled, null, Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> ForCancel(PromiseSemaphore semaphore, PromiseCancelledListener onCancelled) {
-        return dependOn(semaphore, null, null, onCancelled, null, Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, semaphore, null, null, onCancelled, null, Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> Finally(PromiseSettledListener onFinally) {
-        return dependOn(null, null, null, null, cancelledBroadcast -> onFinally.OnSettled(), Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, null, null, null, null, cancelledBroadcast -> onFinally.OnSettled(), Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> Finally(PromiseCancellableSettledListener onFinally) {
-        return dependOn(null, null, null, null, onFinally::OnSettled, Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, null, null, null, null, onFinally::OnSettled, Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> Finally(PromiseSemaphore semaphore, PromiseSettledListener onFinally) {
-        return dependOn(semaphore, null, null, null, cancelledBroadcast -> onFinally.OnSettled(), Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, semaphore, null, null, null, cancelledBroadcast -> onFinally.OnSettled(), Collections.singletonList(this), null);
     }
 
     public <S> Promise<S> Finally(PromiseSemaphore semaphore, PromiseCancellableSettledListener onFinally) {
-        return dependOn(semaphore, null, null, null, onFinally::OnSettled, Collections.singletonList(this), null);
+        return dependOn(scopeCancelledBroadcast, semaphore, null, null, null, onFinally::OnSettled, Collections.singletonList(this), null);
     }
 
     public synchronized Promise<T> SetTimeout(Duration d, PromiseTimeOutListener onTimeOut) {
