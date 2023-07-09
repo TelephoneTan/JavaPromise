@@ -30,10 +30,10 @@ public class TimedTask {
     final AtomicInteger succeededTimes = new AtomicInteger(0);
     final Channel<Unit> started = ExecutorKt.newChannel(1);
 
-    protected TimedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, Duration interval, PromiseCancellableJob<Boolean> job, boolean lifeLimited, int lifeTimes, PromiseSemaphore semaphore) {
+    public TimedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, Duration interval, PromiseCancellableJob<Boolean> job, Integer lifeTimes, PromiseSemaphore semaphore) {
         this.interval = new AtomicReference<>(interval);
         this.job = job;
-        this.lifeLimited = lifeLimited;
+        this.lifeLimited = lifeTimes != null;
         this.lifeTimes = ExecutorKt.newChannel(1);
         ExecutorKt.trySend(this.lifeTimes, lifeLimited ? lifeTimes : 0);
         this.semaphore = semaphore;
@@ -61,7 +61,7 @@ public class TimedTask {
     }
 
     public TimedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, Duration interval, PromiseJob<Boolean> job) {
-        this(scopeCancelledBroadcast, interval, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), false, 0, null);
+        this(scopeCancelledBroadcast, interval, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), null, null);
     }
 
     public TimedTask(Duration interval, PromiseCancellableJob<Boolean> job) {
@@ -69,7 +69,7 @@ public class TimedTask {
     }
 
     public TimedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, Duration interval, PromiseCancellableJob<Boolean> job) {
-        this(scopeCancelledBroadcast, interval, job, false, 0, null);
+        this(scopeCancelledBroadcast, interval, job, null, null);
     }
 
     public TimedTask(Duration interval, PromiseJob<Boolean> job, PromiseSemaphore semaphore) {
@@ -77,7 +77,7 @@ public class TimedTask {
     }
 
     public TimedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, Duration interval, PromiseJob<Boolean> job, PromiseSemaphore semaphore) {
-        this(scopeCancelledBroadcast, interval, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), false, 0, semaphore);
+        this(scopeCancelledBroadcast, interval, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), null, semaphore);
     }
 
     public TimedTask(Duration interval, PromiseCancellableJob<Boolean> job, PromiseSemaphore semaphore) {
@@ -85,7 +85,7 @@ public class TimedTask {
     }
 
     public TimedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, Duration interval, PromiseCancellableJob<Boolean> job, PromiseSemaphore semaphore) {
-        this(scopeCancelledBroadcast, interval, job, false, 0, semaphore);
+        this(scopeCancelledBroadcast, interval, job, null, semaphore);
     }
 
     public TimedTask(Duration interval, PromiseJob<Boolean> job, int times) {
@@ -93,7 +93,7 @@ public class TimedTask {
     }
 
     public TimedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, Duration interval, PromiseJob<Boolean> job, int times) {
-        this(scopeCancelledBroadcast, interval, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), true, times, null);
+        this(scopeCancelledBroadcast, interval, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), times, null);
     }
 
     public TimedTask(Duration interval, PromiseCancellableJob<Boolean> job, int times) {
@@ -101,7 +101,7 @@ public class TimedTask {
     }
 
     public TimedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, Duration interval, PromiseCancellableJob<Boolean> job, int times) {
-        this(scopeCancelledBroadcast, interval, job, true, times, null);
+        this(scopeCancelledBroadcast, interval, job, times, null);
     }
 
     public TimedTask(Duration interval, PromiseJob<Boolean> job, int times, PromiseSemaphore semaphore) {
@@ -109,15 +109,11 @@ public class TimedTask {
     }
 
     public TimedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, Duration interval, PromiseJob<Boolean> job, int times, PromiseSemaphore semaphore) {
-        this(scopeCancelledBroadcast, interval, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), true, times, semaphore);
+        this(scopeCancelledBroadcast, interval, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), times, semaphore);
     }
 
     public TimedTask(Duration interval, PromiseCancellableJob<Boolean> job, int times, PromiseSemaphore semaphore) {
         this(null, interval, job, times, semaphore);
-    }
-
-    public TimedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, Duration interval, PromiseCancellableJob<Boolean> job, int times, PromiseSemaphore semaphore) {
-        this(scopeCancelledBroadcast, interval, job, true, times, semaphore);
     }
 
     void leaveScope() {
