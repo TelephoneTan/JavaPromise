@@ -16,7 +16,7 @@ public class Async {
             Continuation<Unit> continuation
     ) {
         ExecutorKt.delay(
-                d.toNanos(),
+                d,
                 () -> then.Run(scopeCancelledBroadcast == null ? new PromiseCancelledBroadcast() : scopeCancelledBroadcast),
                 continuation
         );

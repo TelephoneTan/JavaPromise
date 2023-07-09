@@ -6,13 +6,13 @@ import kotlinx.coroutines.channels.ChannelResult
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import java.time.Duration
 import java.util.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.CoroutineContext
-import kotlin.time.DurationUnit
-import kotlin.time.toDuration
+import kotlin.time.toKotlinDuration
 
 private val dispatcher = Executors.newCachedThreadPool { r ->
     val thread = Thread(r)
@@ -53,12 +53,12 @@ interface RunWithValueThrowsThrowable<E> {
 }
 
 suspend fun awaitClose(
-        channel: Channel<Unit>,
-        latch: CountDownLatch,
-        then: RunThrowsThrowable,
-        outerChannel: Channel<Unit>?,
-        outerLatch: CountDownLatch?,
-        outerThen: RunThrowsThrowable?,
+    channel: Channel<Unit>,
+    latch: CountDownLatch,
+    then: RunThrowsThrowable,
+    outerChannel: Channel<Unit>?,
+    outerLatch: CountDownLatch?,
+    outerThen: RunThrowsThrowable?,
 ) {
     val l = CountDownLatch(1)
     l.countDown()
@@ -101,10 +101,10 @@ suspend fun withLock(mutexList: Array<Mutex>, then: RunThrowsThrowable) {
 }
 
 suspend fun awaitGroup(
-        channel: Channel<Unit>,
-        num: Int,
-        latch: CountDownLatch,
-        then: RunThrowsThrowable
+    channel: Channel<Unit>,
+    num: Int,
+    latch: CountDownLatch,
+    then: RunThrowsThrowable
 ) {
     val l = CountDownLatch(1)
     l.countDown()
@@ -117,8 +117,8 @@ suspend fun awaitGroup(
 }
 
 fun readFromOrSendTo(
-        from: Channel<Unit>,
-        to: Channel<Unit>
+    from: Channel<Unit>,
+    to: Channel<Unit>
 ) {
     if (from.tryReceive().isFailure) {
         to.trySend(Unit)
@@ -169,10 +169,10 @@ fun trySendToCloseable(to: Channel<Unit>): Boolean? {
     }
 }
 
-suspend fun delay(nano: Long, then: RunThrowsThrowable) {
+suspend fun delay(d: Duration, then: RunThrowsThrowable) {
     val l = CountDownLatch(1)
     l.countDown()
-    delay(nano.toDuration(DurationUnit.NANOSECONDS))
+    delay(d.toKotlinDuration())
     l.await()
     then.run()
 }
@@ -194,10 +194,10 @@ suspend fun <E> onReceive(from: Channel<E>, then: RunWithValueThrowsThrowable<E>
 }
 
 suspend fun <E> onReceive(
-        from: Channel<E>,
-        then: RunWithValueThrowsThrowable<E>,
-        quit: Channel<Unit>,
-        quitThen: RunThrowsThrowable
+    from: Channel<E>,
+    then: RunWithValueThrowsThrowable<E>,
+    quit: Channel<Unit>,
+    quitThen: RunThrowsThrowable
 ) {
     val l = CountDownLatch(1)
     l.countDown()
@@ -214,12 +214,12 @@ suspend fun <E> onReceive(
 }
 
 suspend fun <A, B, C> onReceive(
-        one: Channel<A>,
-        oneThen: RunWithValueThrowsThrowable<A>,
-        two: Channel<B>,
-        twoThen: RunWithValueThrowsThrowable<B>,
-        three: Channel<C>,
-        threeThen: RunWithValueThrowsThrowable<C>
+    one: Channel<A>,
+    oneThen: RunWithValueThrowsThrowable<A>,
+    two: Channel<B>,
+    twoThen: RunWithValueThrowsThrowable<B>,
+    three: Channel<C>,
+    threeThen: RunWithValueThrowsThrowable<C>
 ) {
     val l = CountDownLatch(1)
     l.countDown()

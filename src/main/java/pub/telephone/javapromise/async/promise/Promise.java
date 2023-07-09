@@ -794,7 +794,7 @@ public class Promise<T> {
         }
         if (!ok) {
             int currentSN = timeoutSN.incrementAndGet();
-            ExecutorKt.delay(d.toNanos(), () -> {
+            ExecutorKt.delay(d, () -> {
                 if (timeoutSN.get() == currentSN) {
                     if (Cancel() && onTimeOut != null) {
                         ExecutorKt.submitAsync(() -> onTimeOut.OnTimeOut(d), e -> {
