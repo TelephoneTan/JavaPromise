@@ -16,10 +16,10 @@ public class TestCancellableTimedTask {
 
     void test1() {
         PromiseCancelledBroadcaster broadcaster = new PromiseCancelledBroadcaster();
-        TimedTask t = new TimedTask(broadcaster, Duration.ZERO, (resolver, rejector, cancelledBroadcast) -> {
-            cancelledBroadcast.Listen(() -> System.out.println("内部收到取消广播"));
+        TimedTask t = new TimedTask(broadcaster, Duration.ZERO, (resolver, rejector, state) -> {
+            state.CancelledBroadcast.Listen(() -> System.out.println("内部收到取消广播"));
             for (int i = 0; i < 5; i++) {
-                if (!cancelledBroadcast.IsActive.get()) {
+                if (!state.CancelledBroadcast.IsActive.get()) {
                     System.out.println("内部检测到取消");
                     break;
                 }
@@ -38,12 +38,12 @@ public class TestCancellableTimedTask {
 
     void test2() {
         PromiseCancelledBroadcaster broadcaster = new PromiseCancelledBroadcaster();
-        TimedTask t = new TimedTask(broadcaster, Duration.ZERO, (resolver, rejector, cancelledBroadcast) -> {
-            cancelledBroadcast.Listen(() -> System.out.println("内部 1 收到取消广播"));
-            resolver.Resolve(new Promise<>(cancelledBroadcast, (resolver1, rejector1, cancelledBroadcast1) -> {
-                cancelledBroadcast1.Listen(() -> System.out.println("内部 2 收到取消广播"));
+        TimedTask t = new TimedTask(broadcaster, Duration.ZERO, (resolver, rejector, state) -> {
+            state.CancelledBroadcast.Listen(() -> System.out.println("内部 1 收到取消广播"));
+            resolver.Resolve(new Promise<>(state.CancelledBroadcast, (resolver1, rejector1, state1) -> {
+                state1.CancelledBroadcast.Listen(() -> System.out.println("内部 2 收到取消广播"));
                 for (int i = 0; i < 5; i++) {
-                    if (!cancelledBroadcast1.IsActive.get()) {
+                    if (!state1.CancelledBroadcast.IsActive.get()) {
                         System.out.println("内部 2 检测到取消");
                         break;
                     }

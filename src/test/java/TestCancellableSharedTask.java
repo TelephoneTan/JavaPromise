@@ -17,9 +17,9 @@ public class TestCancellableSharedTask {
 
     void test1() {
         PromiseCancelledBroadcaster broadcaster = new PromiseCancelledBroadcaster();
-        SharedTask<Object> t = new SharedTask<>(broadcaster, (resolver, rejector, cancelledBroadcast) -> {
-            cancelledBroadcast.Listen(() -> System.out.println("内部收到取消广播"));
-            while (cancelledBroadcast.IsActive.get()) {
+        SharedTask<Object> t = new SharedTask<>(broadcaster, (resolver, rejector, state) -> {
+            state.CancelledBroadcast.Listen(() -> System.out.println("内部收到取消广播"));
+            while (state.CancelledBroadcast.IsActive.get()) {
                 System.out.println("hello, world");
                 Thread.sleep(200);
             }
@@ -35,11 +35,11 @@ public class TestCancellableSharedTask {
 
     void test2() {
         PromiseCancelledBroadcaster broadcaster = new PromiseCancelledBroadcaster();
-        SharedTask<Object> p = new SharedTask<>(broadcaster, (resolver, rejector, cancelledBroadcast) -> {
-            cancelledBroadcast.Listen(() -> cancelledBroadcast.Listen(() -> System.out.println("内部 1 收到取消广播")));
-            resolver.Resolve(new Promise<>(cancelledBroadcast, (resolver1, rejector1, cancelledBroadcast1) -> {
-                        cancelledBroadcast1.Listen(() -> System.out.println("内部 2 收到取消广播"));
-                        while (cancelledBroadcast1.IsActive.get()) {
+        SharedTask<Object> p = new SharedTask<>(broadcaster, (resolver, rejector, state) -> {
+            state.CancelledBroadcast.Listen(() -> state.CancelledBroadcast.Listen(() -> System.out.println("内部 1 收到取消广播")));
+            resolver.Resolve(new Promise<>(state.CancelledBroadcast, (resolver1, rejector1, state1) -> {
+                        state1.CancelledBroadcast.Listen(() -> System.out.println("内部 2 收到取消广播"));
+                        while (state1.CancelledBroadcast.IsActive.get()) {
                             System.out.println("hello, world");
                             Thread.sleep(200);
                         }

@@ -7,18 +7,18 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 public class SharedTask<T> {
-    final PromiseCancellableJob<T> job;
+    final PromiseStatefulJob<T> job;
     final Channel<Promise<T>> promise;
     final PromiseSemaphore semaphore;
     final PromiseCancelledBroadcast scopeCancelledBroadcast;
     final Object scopeUnListenKey;
     final CountDownLatch cancelled = new CountDownLatch(1);
 
-    public SharedTask(PromiseCancellableJob<T> job, PromiseSemaphore semaphore) {
+    public SharedTask(PromiseStatefulJob<T> job, PromiseSemaphore semaphore) {
         this(null, job, semaphore);
     }
 
-    public SharedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableJob<T> job, PromiseSemaphore semaphore) {
+    public SharedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseStatefulJob<T> job, PromiseSemaphore semaphore) {
         this.job = job;
         this.semaphore = semaphore;
         this.promise = ExecutorKt.newChannel(1);
@@ -34,7 +34,7 @@ public class SharedTask<T> {
     }
 
     public SharedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseJob<T> job, PromiseSemaphore semaphore) {
-        this(scopeCancelledBroadcast, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), semaphore);
+        this(scopeCancelledBroadcast, (resolver, rejector, state) -> job.Do(resolver, rejector), semaphore);
     }
 
     public SharedTask(PromiseJob<T> job) {
@@ -45,11 +45,11 @@ public class SharedTask<T> {
         this(scopeCancelledBroadcast, job, null);
     }
 
-    public SharedTask(PromiseCancellableJob<T> job) {
+    public SharedTask(PromiseStatefulJob<T> job) {
         this(null, job);
     }
 
-    public SharedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableJob<T> job) {
+    public SharedTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseStatefulJob<T> job) {
         this(scopeCancelledBroadcast, job, null);
     }
 
@@ -58,7 +58,7 @@ public class SharedTask<T> {
     }
 
     public SharedTask(PromiseCancelledBroadcast scopeCancelledBroadcast) {
-        this(scopeCancelledBroadcast, (PromiseCancellableJob<T>) null, null);
+        this(scopeCancelledBroadcast, (PromiseStatefulJob<T>) null, null);
     }
 
     void leaveScope() {
@@ -67,7 +67,7 @@ public class SharedTask<T> {
         }
     }
 
-    public Promise<T> Do(PromiseCancellableJob<T> job) {
+    public Promise<T> Do(PromiseStatefulJob<T> job) {
         return new Promise<>((resolver, rejector) -> ExecutorKt.onReceive(promise, v -> {
             Promise<T> waitFor;
             if (v == null || v.TryAwait()) {
@@ -89,7 +89,7 @@ public class SharedTask<T> {
     }
 
     public Promise<T> Do(PromiseJob<T> job) {
-        return Do((resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector));
+        return Do((resolver, rejector, state) -> job.Do(resolver, rejector));
     }
 
     public Promise<T> Do() {

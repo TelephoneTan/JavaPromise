@@ -4,18 +4,18 @@ import kotlinx.coroutines.channels.Channel;
 import pub.telephone.javapromise.async.promise.*;
 
 public class OnceTask<T> {
-    final PromiseCancellableJob<T> job;
+    final PromiseStatefulJob<T> job;
     final Channel<Promise<T>> promise;
     final PromiseSemaphore semaphore;
     final PromiseCancelledBroadcast scopeCancelledBroadcast;
     final Object scopeUnListenKey;
     final PromiseCancelledBroadcaster cancelledBroadcaster = new PromiseCancelledBroadcaster();
 
-    public OnceTask(PromiseCancellableJob<T> job, PromiseSemaphore semaphore) {
+    public OnceTask(PromiseStatefulJob<T> job, PromiseSemaphore semaphore) {
         this(null, job, semaphore);
     }
 
-    public OnceTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableJob<T> job, PromiseSemaphore semaphore) {
+    public OnceTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseStatefulJob<T> job, PromiseSemaphore semaphore) {
         this.job = job;
         this.semaphore = semaphore;
         this.promise = ExecutorKt.newChannel(1);
@@ -31,7 +31,7 @@ public class OnceTask<T> {
     }
 
     public OnceTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseJob<T> job, PromiseSemaphore semaphore) {
-        this(scopeCancelledBroadcast, (resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector), semaphore);
+        this(scopeCancelledBroadcast, (resolver, rejector, state) -> job.Do(resolver, rejector), semaphore);
     }
 
     public OnceTask(PromiseJob<T> job) {
@@ -41,12 +41,12 @@ public class OnceTask<T> {
     public OnceTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseJob<T> job) {
         this(scopeCancelledBroadcast, job, null);
     }
- 
-    public OnceTask(PromiseCancellableJob<T> job) {
+
+    public OnceTask(PromiseStatefulJob<T> job) {
         this(null, job);
     }
 
-    public OnceTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseCancellableJob<T> job) {
+    public OnceTask(PromiseCancelledBroadcast scopeCancelledBroadcast, PromiseStatefulJob<T> job) {
         this(scopeCancelledBroadcast, job, null);
     }
 
@@ -55,7 +55,7 @@ public class OnceTask<T> {
     }
 
     public OnceTask(PromiseCancelledBroadcast scopeCancelledBroadcast) {
-        this(scopeCancelledBroadcast, (PromiseCancellableJob<T>) null, null);
+        this(scopeCancelledBroadcast, (PromiseStatefulJob<T>) null, null);
     }
 
     void leaveScope() {
@@ -64,7 +64,7 @@ public class OnceTask<T> {
         }
     }
 
-    public Promise<T> Do(PromiseCancellableJob<T> job) {
+    public Promise<T> Do(PromiseStatefulJob<T> job) {
         return new Promise<>((resolver, rejector) -> ExecutorKt.onReceive(promise, v -> {
             if (v == null) {
                 Promise<T> p = new Promise<>(cancelledBroadcaster, job, semaphore);
@@ -79,7 +79,7 @@ public class OnceTask<T> {
     }
 
     public Promise<T> Do(PromiseJob<T> job) {
-        return Do((resolver, rejector, cancelledBroadcast) -> job.Do(resolver, rejector));
+        return Do((resolver, rejector, state) -> job.Do(resolver, rejector));
     }
 
     public Promise<T> Do() {
