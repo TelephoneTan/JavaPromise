@@ -38,9 +38,6 @@ public class TimedTask {
         ExecutorKt.trySend(this.lifeTimes, lifeLimited ? lifeTimes : 0);
         this.semaphore = semaphore;
         this.scopeCancelledBroadcast = scopeCancelledBroadcast;
-        this.scopeUnListenKey = this.scopeCancelledBroadcast != null ?
-                this.scopeCancelledBroadcast.Listen(this::Cancel) :
-                null;
         Promise<Integer> p = new Promise<>((resolver, rejector) -> ExecutorKt.onReceive(
                 succeeded,
                 resolver::Resolve,
@@ -54,6 +51,9 @@ public class TimedTask {
             leaveScope();
             return null;
         }).Then(value -> p);
+        this.scopeUnListenKey = this.scopeCancelledBroadcast != null ?
+                this.scopeCancelledBroadcast.Listen(this::Cancel) :
+                null;
     }
 
     public TimedTask(Duration interval, PromiseJob<Boolean> job) {
