@@ -817,4 +817,8 @@ public class Promise<T> {
     interface runThrowsThrowable {
         void run() throws Throwable;
     }
+
+    public static void InitThreadPool(int n) {
+        ExecutorKt.initDispatcher(n);
+    }
 }

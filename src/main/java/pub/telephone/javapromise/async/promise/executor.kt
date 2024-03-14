@@ -10,15 +10,26 @@ import java.time.Duration
 import java.util.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.toKotlinDuration
 
-private val dispatcher = Executors.newCachedThreadPool { r ->
-    val thread = Thread(r)
+private val factory = ThreadFactory {
+    val thread = Thread(it)
     thread.isDaemon = true
     thread
-}.asCoroutineDispatcher()
+}
+
+private fun newFixedDispatcher(n: Int) = Executors.newFixedThreadPool(n, factory).asCoroutineDispatcher()
+
+private fun newCachedDispatcher() = Executors.newCachedThreadPool(factory).asCoroutineDispatcher()
+
+private var dispatcher = newCachedDispatcher()
+
+fun initDispatcher(n: Int) {
+    dispatcher = newFixedDispatcher(n)
+}
 
 private val cancelDispatcher = Executors.newSingleThreadExecutor { r ->
     val thread = Thread(r)
