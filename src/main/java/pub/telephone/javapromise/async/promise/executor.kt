@@ -65,46 +65,32 @@ interface RunWithValueThrowsThrowable<E> {
 
 suspend fun awaitClose(
     channel: Channel<Unit>,
-    latch: CountDownLatch,
     then: RunThrowsThrowable,
     outerChannel: Channel<Unit>?,
-    outerLatch: CountDownLatch?,
     outerThen: RunThrowsThrowable?,
 ) {
-    val l = CountDownLatch(1)
-    l.countDown()
     select {
-        if (outerChannel != null && outerLatch != null && outerThen != null) {
+        if (outerChannel != null && outerThen != null) {
             outerChannel.onReceiveCatching {
-                l.await()
-                outerLatch.await()
                 outerThen.run()
             }
         }
         channel.onReceiveCatching {
-            l.await()
-            latch.await()
             then.run()
         }
     }
 }
 
 suspend fun withLock(mutex: Mutex, then: RunThrowsThrowable) {
-    val l = CountDownLatch(1)
-    l.countDown()
     mutex.lock()
-    l.await()
     then.run()
     mutex.unlock()
 }
 
 suspend fun withLock(mutexList: Array<Mutex>, then: RunThrowsThrowable) {
-    val l = CountDownLatch(1)
-    l.countDown()
     for (mutex in mutexList) {
         mutex.lock()
     }
-    l.await()
     then.run()
     for (mutex in mutexList) {
         mutex.unlock()
@@ -114,16 +100,11 @@ suspend fun withLock(mutexList: Array<Mutex>, then: RunThrowsThrowable) {
 suspend fun awaitGroup(
     channel: Channel<Unit>,
     num: Int,
-    latch: CountDownLatch,
     then: RunThrowsThrowable
 ) {
-    val l = CountDownLatch(1)
-    l.countDown()
     repeat(num) {
         channel.receive()
     }
-    l.await()
-    latch.await()
     then.run()
 }
 
@@ -181,26 +162,17 @@ fun trySendToCloseable(to: Channel<Unit>): Boolean? {
 }
 
 suspend fun delay(d: Duration, then: RunThrowsThrowable) {
-    val l = CountDownLatch(1)
-    l.countDown()
     delay(d.toKotlinDuration())
-    l.await()
     then.run()
 }
 
 suspend fun onReceive(from: Channel<Unit>, then: RunThrowsThrowable) {
-    val l = CountDownLatch(1)
-    l.countDown()
     from.receive()
-    l.await()
     then.run()
 }
 
 suspend fun <E> onReceive(from: Channel<E>, then: RunWithValueThrowsThrowable<E>) {
-    val l = CountDownLatch(1)
-    l.countDown()
     val v = from.receive()
-    l.await()
     then.run(v)
 }
 
@@ -210,15 +182,11 @@ suspend fun <E> onReceive(
     quit: Channel<Unit>,
     quitThen: RunThrowsThrowable
 ) {
-    val l = CountDownLatch(1)
-    l.countDown()
     select {
         quit.onReceiveCatching {
-            l.await()
             quitThen.run()
         }
         from.onReceive { v ->
-            l.await()
             then.run(v)
         }
     }
@@ -232,29 +200,21 @@ suspend fun <A, B, C> onReceive(
     three: Channel<C>,
     threeThen: RunWithValueThrowsThrowable<C>
 ) {
-    val l = CountDownLatch(1)
-    l.countDown()
     select {
         one.onReceive { v ->
-            l.await()
             oneThen.run(v)
         }
         two.onReceive { v ->
-            l.await()
             twoThen.run(v)
         }
         three.onReceive { v ->
-            l.await()
             threeThen.run(v)
         }
     }
 }
 
 suspend fun onSend(to: Channel<Unit>, then: RunThrowsThrowable) {
-    val l = CountDownLatch(1)
-    l.countDown()
     to.send(Unit)
-    l.await()
     then.run()
 }
 
@@ -263,10 +223,7 @@ suspend fun acquirePromiseSemaphore(semaphore: PromiseSemaphore?, n: Int, depth:
     var d = depth
     while (s != null) {
         for (i in 1..n) {
-            val l = CountDownLatch(1)
-            l.countDown()
             s.ticketChannel.receive()
-            l.await()
         }
         s = s.parent
         if (d >= 1) {

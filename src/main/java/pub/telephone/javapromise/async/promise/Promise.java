@@ -158,7 +158,7 @@ public class Promise<T> {
                             channel.send(Unit.INSTANCE, wontSuspendContinuation);
                         }, noErrorContinuation);
                     }
-                }, null, null, null, reportError);
+                }, null, null, reportError);
             }
         }
     }
@@ -224,7 +224,7 @@ public class Promise<T> {
                     os
             );
             Continuation<Unit> rejectMe = ExecutorKt.normalContinuation(rejector::Reject);
-            ExecutorKt.awaitGroup(channel, totalNum, latch, () -> ExecutorKt.withLock(new Mutex[]{rv, rr, rc, rs, ov, or, oc, os}, () -> {
+            ExecutorKt.awaitGroup(channel, totalNum, () -> ExecutorKt.withLock(new Mutex[]{rv, rr, rc, rs, ov, or, oc, os}, () -> {
                 boolean succeeded = true;
                 boolean cancelled = false;
                 Throwable reason = null;
@@ -300,7 +300,7 @@ public class Promise<T> {
                                     rejector.Reject(promise.reason);
                                 }
                                 afterFinally.run();
-                            }, state.self.settled, state.self.settledLatch, () -> {
+                            }, state.self.settled, () -> {
                                 if (state.self.cancelled()) {
                                     promise.Cancel();
                                 }
@@ -632,16 +632,13 @@ public class Promise<T> {
     void awaitSettle(
             runThrowsThrowable then,
             @Nullable Channel<Unit> outerSettled,
-            @Nullable CountDownLatch outerSettledLatch,
             @Nullable runThrowsThrowable outerThen,
             errorListener onError
     ) {
         ExecutorKt.awaitClose(
                 settled,
-                settledLatch,
                 then::run,
                 outerSettled,
-                outerSettledLatch,
                 outerThen == null ? null : outerThen::run,
                 ExecutorKt.normalContinuation(onError::onError)
         );
@@ -682,7 +679,7 @@ public class Promise<T> {
             if (failed()) {
                 promise.fail(reason);
             }
-        }, promise.settled, promise.settledLatch, () -> {
+        }, promise.settled, () -> {
             if (promise.cancelled()) {
                 Promise.this.Cancel();
             }
