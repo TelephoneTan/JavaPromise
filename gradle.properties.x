@@ -1,2 +1,2 @@
-#socksProxyHost=localhost
-#socksProxyPort=7890
+#systemProp.socksProxyHost=localhost
+#systemProp.socksProxyPort=7890
