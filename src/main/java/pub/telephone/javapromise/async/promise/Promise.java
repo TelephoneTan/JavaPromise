@@ -19,7 +19,7 @@ public class Promise<T> {
     final CountDownLatch success = new CountDownLatch(1);
     final CountDownLatch fail = new CountDownLatch(1);
     final CountDownLatch cancelled = new CountDownLatch(1);
-    final PromiseCancelledBroadcast cancelledBroadcast = new PromiseCancelledBroadcast();
+    final PromiseCancelledBroadcaster cancelledBroadcast = new PromiseCancelledBroadcaster();
     final Channel<Unit> settled = ExecutorKt.newChannel(Channel.RENDEZVOUS);
     final CountDownLatch settledLatch = new CountDownLatch(1);
     final Channel<Unit> setResult = ExecutorKt.newChannel(1);
