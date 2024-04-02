@@ -19,7 +19,7 @@ public class TestCancellableTimedTask {
         TimedTask t = new TimedTask(broadcaster, Duration.ZERO, (resolver, rejector, state) -> {
             state.CancelledBroadcast.Listen(() -> System.out.println("内部收到取消广播"));
             for (int i = 0; i < 5; i++) {
-                if (!state.CancelledBroadcast.IsActive.get()) {
+                if (!state.CancelledBroadcast.isActive()) {
                     System.out.println("内部检测到取消");
                     break;
                 }
@@ -43,7 +43,7 @@ public class TestCancellableTimedTask {
             resolver.Resolve(new Promise<>(state.CancelledBroadcast, (resolver1, rejector1, state1) -> {
                 state1.CancelledBroadcast.Listen(() -> System.out.println("内部 2 收到取消广播"));
                 for (int i = 0; i < 5; i++) {
-                    if (!state1.CancelledBroadcast.IsActive.get()) {
+                    if (!state1.CancelledBroadcast.isActive()) {
                         System.out.println("内部 2 检测到取消");
                         break;
                     }

@@ -5,6 +5,7 @@ import kotlin.coroutines.Continuation;
 import pub.telephone.javapromise.async.promise.ExecutorKt;
 import pub.telephone.javapromise.async.promise.Promise;
 import pub.telephone.javapromise.async.promise.PromiseCancelledBroadcast;
+import pub.telephone.javapromise.async.promise.PromiseCancelledBroadcaster;
 
 import java.time.Duration;
 
@@ -17,7 +18,7 @@ public class Async {
     ) {
         ExecutorKt.delay(
                 d,
-                () -> then.Run(scopeCancelledBroadcast == null ? new PromiseCancelledBroadcast() : scopeCancelledBroadcast),
+                () -> then.Run(scopeCancelledBroadcast == null ? new PromiseCancelledBroadcaster() : scopeCancelledBroadcast),
                 continuation
         );
     }

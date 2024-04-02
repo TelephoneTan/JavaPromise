@@ -24,7 +24,7 @@ public class TestCancellablePromise {
         PromiseCancelledBroadcaster broadcaster = new PromiseCancelledBroadcaster();
         Promise<Long> p = new Promise<>(broadcaster, (resolver, rejector, state) -> {
             state.CancelledBroadcast.Listen(() -> System.out.println("内部收到取消广播"));
-            while (state.CancelledBroadcast.IsActive.get()) {
+            while (state.CancelledBroadcast.isActive()) {
                 System.out.println("hello, world");
                 Thread.sleep(200);
             }
@@ -44,7 +44,7 @@ public class TestCancellablePromise {
             state.CancelledBroadcast.Listen(() -> state.CancelledBroadcast.Listen(() -> System.out.println("内部 1 收到取消广播")));
             resolver.Resolve(new Promise<>(state.CancelledBroadcast, (resolver1, rejector1, state1) -> {
                         state1.CancelledBroadcast.Listen(() -> System.out.println("内部 2 收到取消广播"));
-                        while (state1.CancelledBroadcast.IsActive.get()) {
+                while (state1.CancelledBroadcast.isActive()) {
                             System.out.println("hello, world");
                             Thread.sleep(200);
                         }
@@ -69,7 +69,7 @@ public class TestCancellablePromise {
             state.CancelledBroadcast.Listen(() -> state.CancelledBroadcast.Listen(() -> System.out.println("内部 1 收到取消广播")));
             return new Promise<>(state.CancelledBroadcast, (resolver1, rejector1, state1) -> {
                 state1.CancelledBroadcast.Listen(() -> System.out.println("内部 2 收到取消广播"));
-                while (state1.CancelledBroadcast.IsActive.get()) {
+                while (state1.CancelledBroadcast.isActive()) {
                     System.out.println("hello, world");
                     Thread.sleep(200);
                 }
@@ -94,7 +94,7 @@ public class TestCancellablePromise {
             state.CancelledBroadcast.Listen(() -> state.CancelledBroadcast.Listen(() -> System.out.println("内部 1 收到取消广播")));
             return new Promise<>(state.CancelledBroadcast, (resolver1, rejector1, state1) -> {
                 state1.CancelledBroadcast.Listen(() -> System.out.println("内部 2 收到取消广播"));
-                while (state1.CancelledBroadcast.IsActive.get()) {
+                while (state1.CancelledBroadcast.isActive()) {
                     System.out.println("hello, world");
                     Thread.sleep(200);
                 }
@@ -119,7 +119,7 @@ public class TestCancellablePromise {
             state.CancelledBroadcast.Listen(() -> state.CancelledBroadcast.Listen(() -> System.out.println("内部 1 收到取消广播")));
             return new Promise<>(state.CancelledBroadcast, (resolver1, rejector1, state1) -> {
                 state1.CancelledBroadcast.Listen(() -> System.out.println("内部 2 收到取消广播"));
-                while (state1.CancelledBroadcast.IsActive.get()) {
+                while (state1.CancelledBroadcast.isActive()) {
                     System.out.println("hello, world");
                     Thread.sleep(200);
                 }

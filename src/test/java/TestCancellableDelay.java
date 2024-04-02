@@ -19,7 +19,7 @@ public class TestCancellableDelay {
     void test1() {
         PromiseCancelledBroadcaster broadcaster = new PromiseCancelledBroadcaster();
         Async.Delay(broadcaster, Duration.ofSeconds(3), cancelledBroadcast -> {
-            while (cancelledBroadcast.IsActive.get()) {
+            while (cancelledBroadcast.isActive()) {
                 System.out.println("hello, world");
                 Thread.sleep(200);
             }
@@ -35,7 +35,7 @@ public class TestCancellableDelay {
     void test2() {
         PromiseCancelledBroadcaster broadcaster = new PromiseCancelledBroadcaster();
         Async.Delay(broadcaster, Duration.ofSeconds(3), cancelledBroadcast -> {
-            while (cancelledBroadcast.IsActive.get()) {
+            while (cancelledBroadcast.isActive()) {
                 System.out.println("hello, world");
                 Thread.sleep(200);
             }
@@ -51,7 +51,7 @@ public class TestCancellableDelay {
     void test3() {
         PromiseCancelledBroadcaster broadcaster = new PromiseCancelledBroadcaster();
         Async.Delay(broadcaster, Duration.ofSeconds(3)).Then((value, state) -> {
-            while (state.CancelledBroadcast.IsActive.get()) {
+            while (state.CancelledBroadcast.isActive()) {
                 System.out.println("hello, world");
                 Thread.sleep(200);
             }
@@ -68,7 +68,7 @@ public class TestCancellableDelay {
     void test4() {
         PromiseCancelledBroadcaster broadcaster = new PromiseCancelledBroadcaster();
         Async.Delay(broadcaster, Duration.ofSeconds(3)).Then((value, state) -> {
-            while (state.CancelledBroadcast.IsActive.get()) {
+            while (state.CancelledBroadcast.isActive()) {
                 System.out.println("hello, world");
                 Thread.sleep(200);
             }
