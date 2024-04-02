@@ -27,7 +27,7 @@ private fun newCachedDispatcher() = Executors.newCachedThreadPool(factory).asCor
 
 private var dispatcher = newCachedDispatcher()
 
-fun initDispatcher(n: Int) {
+internal fun initDispatcher(n: Int) {
     dispatcher = newFixedDispatcher(n)
 }
 
@@ -37,33 +37,33 @@ private val cancelDispatcher = Executors.newSingleThreadExecutor { r ->
     thread
 }.asCoroutineDispatcher()
 
-fun <E> newChannel(capacity: Int = Channel.RENDEZVOUS): Channel<E> {
+internal fun <E> newChannel(capacity: Int = Channel.RENDEZVOUS): Channel<E> {
     return Channel(capacity)
 }
 
-fun newSemaphore(n: Int): Semaphore {
+internal fun newSemaphore(n: Int): Semaphore {
     return Semaphore(n)
 }
 
-fun newSemaphore(n: Int, acquired: Int): Semaphore {
+internal fun newSemaphore(n: Int, acquired: Int): Semaphore {
     return Semaphore(n, acquired)
 }
 
-fun newMutex(): Mutex {
+internal fun newMutex(): Mutex {
     return Mutex()
 }
 
-interface RunThrowsThrowable {
+internal interface RunThrowsThrowable {
     @Throws(Throwable::class)
     fun run()
 }
 
-interface RunWithValueThrowsThrowable<E> {
+internal interface RunWithValueThrowsThrowable<E> {
     @Throws(Throwable::class)
     fun run(v: E)
 }
 
-suspend fun awaitClose(
+internal suspend fun awaitClose(
     channel: Channel<Unit>,
     then: RunThrowsThrowable,
     outerChannel: Channel<Unit>?,
@@ -81,13 +81,13 @@ suspend fun awaitClose(
     }
 }
 
-suspend fun withLock(mutex: Mutex, then: RunThrowsThrowable) {
+internal suspend fun withLock(mutex: Mutex, then: RunThrowsThrowable) {
     mutex.lock()
     then.run()
     mutex.unlock()
 }
 
-suspend fun withLock(mutexList: Array<Mutex>, then: RunThrowsThrowable) {
+internal suspend fun withLock(mutexList: Array<Mutex>, then: RunThrowsThrowable) {
     for (mutex in mutexList) {
         mutex.lock()
     }
@@ -97,7 +97,7 @@ suspend fun withLock(mutexList: Array<Mutex>, then: RunThrowsThrowable) {
     }
 }
 
-suspend fun awaitGroup(
+internal suspend fun awaitGroup(
     channel: Channel<Unit>,
     num: Int,
     then: RunThrowsThrowable
@@ -108,7 +108,7 @@ suspend fun awaitGroup(
     then.run()
 }
 
-fun readFromOrSendTo(
+internal fun readFromOrSendTo(
     from: Channel<Unit>,
     to: Channel<Unit>
 ) {
@@ -117,7 +117,7 @@ fun readFromOrSendTo(
     }
 }
 
-fun <E> tryReceiveAll(from: Channel<E>): List<E> {
+internal fun <E> tryReceiveAll(from: Channel<E>): List<E> {
     val res = mutableListOf<E>()
     var r: ChannelResult<E>
     while (true) {
@@ -131,19 +131,19 @@ fun <E> tryReceiveAll(from: Channel<E>): List<E> {
     return res
 }
 
-fun trySend(to: Channel<Unit>): Boolean {
+internal fun trySend(to: Channel<Unit>): Boolean {
     return to.trySend(Unit).isSuccess
 }
 
-fun <E> trySend(to: Channel<E>, x: E): Boolean {
+internal fun <E> trySend(to: Channel<E>, x: E): Boolean {
     return to.trySend(x).isSuccess
 }
 
-fun tryReceive(from: Channel<Unit>): Boolean {
+internal fun tryReceive(from: Channel<Unit>): Boolean {
     return from.tryReceive().isSuccess
 }
 
-fun <E> tryReceive(from: Channel<E>, then: RunWithValueThrowsThrowable<E>, failThen: RunThrowsThrowable) {
+internal fun <E> tryReceive(from: Channel<E>, then: RunWithValueThrowsThrowable<E>, failThen: RunThrowsThrowable) {
     val res = from.tryReceive()
     if (res.isSuccess) {
         then.run(res.getOrThrow())
@@ -152,7 +152,7 @@ fun <E> tryReceive(from: Channel<E>, then: RunWithValueThrowsThrowable<E>, failT
     }
 }
 
-fun trySendToCloseable(to: Channel<Unit>): Boolean? {
+internal fun trySendToCloseable(to: Channel<Unit>): Boolean? {
     val result = to.trySend(Unit)
     return if (result.isClosed) {
         null
@@ -161,22 +161,22 @@ fun trySendToCloseable(to: Channel<Unit>): Boolean? {
     }
 }
 
-suspend fun delay(d: Duration, then: RunThrowsThrowable) {
+internal suspend fun delay(d: Duration, then: RunThrowsThrowable) {
     delay(d.toKotlinDuration())
     then.run()
 }
 
-suspend fun onReceive(from: Channel<Unit>, then: RunThrowsThrowable) {
+internal suspend fun onReceive(from: Channel<Unit>, then: RunThrowsThrowable) {
     from.receive()
     then.run()
 }
 
-suspend fun <E> onReceive(from: Channel<E>, then: RunWithValueThrowsThrowable<E>) {
+internal suspend fun <E> onReceive(from: Channel<E>, then: RunWithValueThrowsThrowable<E>) {
     val v = from.receive()
     then.run(v)
 }
 
-suspend fun <E> onReceive(
+internal suspend fun <E> onReceive(
     from: Channel<E>,
     then: RunWithValueThrowsThrowable<E>,
     quit: Channel<Unit>,
@@ -192,7 +192,7 @@ suspend fun <E> onReceive(
     }
 }
 
-suspend fun <A, B, C> onReceive(
+internal suspend fun <A, B, C> onReceive(
     one: Channel<A>,
     oneThen: RunWithValueThrowsThrowable<A>,
     two: Channel<B>,
@@ -213,12 +213,12 @@ suspend fun <A, B, C> onReceive(
     }
 }
 
-suspend fun onSend(to: Channel<Unit>, then: RunThrowsThrowable) {
+internal suspend fun onSend(to: Channel<Unit>, then: RunThrowsThrowable) {
     to.send(Unit)
     then.run()
 }
 
-suspend fun acquirePromiseSemaphore(semaphore: PromiseSemaphore?, n: Int, depth: Int, then: RunThrowsThrowable) {
+internal suspend fun acquirePromiseSemaphore(semaphore: PromiseSemaphore?, n: Int, depth: Int, then: RunThrowsThrowable) {
     var s = semaphore
     var d = depth
     while (s != null) {
@@ -236,7 +236,7 @@ suspend fun acquirePromiseSemaphore(semaphore: PromiseSemaphore?, n: Int, depth:
     then.run()
 }
 
-interface ErrorListener {
+internal interface ErrorListener {
     fun onError(e: Throwable?)
 }
 
@@ -256,31 +256,31 @@ private fun <E> buildContinuation(dispatcher: ExecutorCoroutineDispatcher, onErr
     }
 }
 
-fun <E> normalContinuation(onError: ErrorListener): Continuation<E> {
+internal fun <E> normalContinuation(onError: ErrorListener): Continuation<E> {
     return buildContinuation(dispatcher, onError)
 }
 
-fun <E> ignoreErrorContinuation(): Continuation<E> {
+internal fun <E> ignoreErrorContinuation(): Continuation<E> {
     return buildContinuation(dispatcher, object : ErrorListener {
         override fun onError(e: Throwable?) {
         }
     })
 }
 
-fun <E> noErrorContinuation(): Continuation<E> {
+internal fun <E> noErrorContinuation(): Continuation<E> {
     return buildContinuation(dispatcher, null)
 }
 
-fun <E> wontSuspendContinuation(): Continuation<E> {
+internal fun <E> wontSuspendContinuation(): Continuation<E> {
     return buildContinuation(dispatcher, null)
 }
 
-fun <E> cancelContinuation(): Continuation<E> {
+internal fun <E> cancelContinuation(): Continuation<E> {
     return buildContinuation(cancelDispatcher, null)
 }
 
 @OptIn(DelicateCoroutinesApi::class)
-fun submitAsync(runnable: Runnable, onError: ErrorListener) {
+internal fun submitAsync(runnable: Runnable, onError: ErrorListener) {
     val l = CountDownLatch(1)
     l.countDown()
     GlobalScope.launch(buildContext(dispatcher, onError)) {
