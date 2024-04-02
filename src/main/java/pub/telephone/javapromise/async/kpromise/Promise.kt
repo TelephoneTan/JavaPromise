@@ -113,7 +113,7 @@ class Promise<RESULT> private constructor(
     private val cancelledBroadcaster: PromiseCancelledBroadcaster = pub.telephone.javapromise.async.promise.PromiseCancelledBroadcaster()
 
     // 此字段必须放在最后一个，因为 cancel 方法可能会被立即调用
-    private val scopeUnListenKey = scopeCancelledBroadcast?.listen(::cancel)
+    private val scopeUnListenKey = scopeCancelledBroadcast?.listen(this::cancel)
 
     private fun settle(status: Status, op: () -> Unit = {}): Boolean {
         return submit.trySend(null).takeIf { it.isSuccess }?.run {
@@ -353,9 +353,50 @@ class Promise<RESULT> private constructor(
         }
         return this
     }
+
+    suspend fun await(): RESULT {
+        awaitSettled()
+        return when (status.get()) {
+            null, Status.RUNNING -> throw Throwable()
+            Status.SUCCEED -> value as RESULT
+            Status.FAILED -> throw reason!!
+            Status.CANCELLED -> throw CancellationException()
+        }
+    }
+
+    companion object {
+        fun <RESULT> race(
+                scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+                vararg promises: Promise<RESULT>
+        ): Promise<RESULT> {
+            return Promise(scopeCancelledBroadcast) {
+                rsp(select {
+                    for (p in promises) {
+                        p.onSettled { p }
+                    }
+                })
+            }
+        }
+
+        fun <RESULT> resolve(value: RESULT) = Promise<RESULT>(null, null).apply {
+            succeed(value)
+        }
+
+        fun <RESULT> reject(reason: Throwable) = Promise<RESULT>(null, null).apply {
+            fail(reason)
+        }
+
+        fun error(reason: Throwable) = reject<Any?>(reason)
+
+        fun <RESULT> cancel() = Promise<RESULT>(null, null).apply {
+            cancel()
+        }
+
+        fun abort() = cancel<Any?>()
+    }
 }
 
-fun Job.toPromiseScope(): PromiseScope = run {
+private fun Job.toPromiseScope(): PromiseScope = run {
     with(object : PromiseCancelledBroadcast {
         override val isActive: Boolean
             get() = this@run.isActive
@@ -379,12 +420,56 @@ fun Job.toPromiseScope(): PromiseScope = run {
     }
 }
 
-fun <RESULT> Job.promise(job: PromiseJob<RESULT>) = toPromiseScope().promise(job)
-
-fun job(builder: PromiseScope.() -> Unit): Job = Job().apply {
-    builder(toPromiseScope())
+interface Work {
+    fun cancel()
 }
 
-fun <RESULT> process(builder: PromiseScope.() -> Promise<RESULT>): Promise<RESULT> = Promise {
-    rsp(builder())
+class Task<RESULT>(val promise: Promise<RESULT>, private val cancelledBroadcaster: PromiseCancelledBroadcaster?) : Work {
+    fun await() = runBlocking { promise.await() }
+    override fun cancel() {
+        cancelledBroadcaster!!.broadcast()
+    }
 }
+
+typealias ProcessFunc<RESULT> = PromiseScope.() -> Promise<RESULT>
+
+typealias WorkFunc = PromiseScope.() -> Unit
+
+private fun WorkFunc.toProcessFunc(): ProcessFunc<Any?> = {
+    this@toProcessFunc()
+    Promise.resolve(null)
+}
+
+private fun <RESULT> process(
+        promiseScope: PromiseScope,
+        cancelledBroadcaster: PromiseCancelledBroadcaster?,
+        builder: ProcessFunc<RESULT>
+): Task<RESULT> = Task(promiseScope.builder(), cancelledBroadcaster)
+
+private fun <RESULT> processInNewJob(builder: ProcessFunc<RESULT>) = Job().run newJob@{
+    toPromiseScope().run scope@{
+        process(
+                this@scope,
+                object :
+                        PromiseCancelledBroadcaster,
+                        PromiseCancelledBroadcast by this@scope.scopeCancelledBroadcast!! {
+                    override fun broadcast() {
+                        this@newJob.cancel()
+                    }
+                },
+                builder
+        )
+    }
+}
+
+fun <RESULT> process(builder: ProcessFunc<RESULT>) = processInNewJob(builder)
+fun work(builder: WorkFunc) = process(builder.toProcessFunc())
+fun <RESULT> promise(job: PromiseJob<RESULT>) = process { promise(job) }
+fun <RESULT> PromiseScope.process(builder: ProcessFunc<RESULT>) = process(this, null, builder)
+fun PromiseScope.work(builder: WorkFunc) = process(builder.toProcessFunc())
+fun <RESULT> CoroutineScope.process(builder: ProcessFunc<RESULT>) = coroutineContext[Job]?.run {
+    process(toPromiseScope(), null, builder)
+} ?: processInNewJob(builder)
+
+fun CoroutineScope.work(builder: WorkFunc) = process(builder.toProcessFunc())
+fun <RESULT> CoroutineScope.promise(job: PromiseJob<RESULT>) = process { promise(job) }
