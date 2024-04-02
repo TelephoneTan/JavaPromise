@@ -1,6 +1,7 @@
 import kotlinx.coroutines.*
 import org.junit.jupiter.api.Test
-import pub.telephone.javapromise.async.kpromise.job
+import pub.telephone.javapromise.async.kpromise.process
+import pub.telephone.javapromise.async.kpromise.promise
 import java.util.*
 import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration.Companion.seconds
@@ -10,7 +11,7 @@ class TestKPromise {
 
     @Test
     fun test() {
-        job {
+        process {
             println("【${time}】hello world")
             //
             promise {
@@ -102,13 +103,35 @@ class TestKPromise {
                 }
                 println("【${time}】cancelled here 2")
             }
-        }.apply {
+        }.also {
             GlobalScope.launch {
                 delay(8.seconds)
-//                this@apply.cancel()
+                it.cancel()
             }
-        }
+        }.await()
+        println("【${time}】await pass")
         runBlocking { delay(60.seconds) }
+    }
+
+    @Test
+    fun testRace() {
+        promise {
+            println("【${time}】hello")
+            val p1 = promise {
+                delay(5.seconds)
+                rsv("1")
+            }
+            val p2 = promise {
+                delay(5.seconds)
+                rsv("2")
+            }
+//            p1.await()
+//            p2.await()
+            race(p1, p2).next {
+                println("【${time}】$value")
+            }.await()
+            rsv(null)
+        }.await()
     }
 
     suspend fun aa() {
