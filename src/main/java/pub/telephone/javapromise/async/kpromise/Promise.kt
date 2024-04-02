@@ -169,8 +169,12 @@ class Promise<RESULT> private constructor(
                 return s
             }
 
-            override val scopeCancelledBroadcast: PromiseCancelledBroadcast?
-                get() = this@Promise.scopeCancelledBroadcast
+            override val scopeCancelledBroadcast = PromiseCancelledBroadcast.merge(
+                    *arrayOf(
+                            this@Promise.scopeCancelledBroadcast,
+                            this@Promise.cancelledBroadcaster
+                    )
+            )
         })
     }
 
