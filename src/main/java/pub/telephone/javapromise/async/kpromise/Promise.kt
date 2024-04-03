@@ -105,17 +105,43 @@ class Promise<RESULT> private constructor(
     private var timeoutTriggered = false
     private var value: RESULT? = null
     private var reason: Throwable? = null
-    private val runningJob: Job? = job?.run jobRun@{
+    private val semaphoreMutex = Any()
+    private var semaphoreAcquired = false
+    private var semaphoreReleased = false
+
+    private suspend fun acquireSemaphore() {
         config.semaphore?.run semaphoreRun@{
-            if (config.shouldWrapJobWithSemaphore) {
-                wrap@{
-                    this@semaphoreRun.acquire()
-                    this@jobRun.invoke(this@wrap)
+            this@semaphoreRun.acquire()
+            synchronized(semaphoreMutex) {
+                semaphoreAcquired = true
+                if (semaphoreReleased) {
+                    this@semaphoreRun.release()
+                    throw CancellationException()
                 }
-            } else {
-                this@jobRun
             }
-        } ?: this@jobRun
+        }
+    }
+
+    private fun releaseSemaphore() {
+        config.semaphore?.run semaphoreRun@{
+            synchronized(semaphoreMutex) {
+                if (semaphoreAcquired) {
+                    this@semaphoreRun.release()
+                }
+                semaphoreReleased = true
+            }
+        }
+    }
+
+    private val runningJob: Job? = job?.run jobRun@{
+        if (config.shouldWrapJobWithSemaphore) {
+            wrap@{
+                acquireSemaphore()
+                this@jobRun.invoke(this@wrap)
+            }
+        } else {
+            this@jobRun
+        }
     }?.let {
         CoroutineScope(dispatcher.get() + CoroutineExceptionHandler { _, _ ->
             // 不在这里捕获异常，因为 CancellationException 不会在这里被捕获，而实际上
@@ -148,6 +174,7 @@ class Promise<RESULT> private constructor(
             settled.close()
             // scopeUnListenKey 为空时不一定表示没有监听，有可能是初始化字段时已经取消导致 cancel 被立即调用
             scopeUnListenKey?.let { config.scopeCancelledBroadcast?.unListen(it) }
+            releaseSemaphore()
             if (status == Status.CANCELLED) {
                 runningJob?.cancel()
                 cancelledBroadcaster.broadcast()
@@ -183,7 +210,7 @@ class Promise<RESULT> private constructor(
             }
 
             override suspend fun rsp(p: Promise<RESULT>): JobResult {
-                transfer(p, fixedPromise)
+                transfer(false, p, fixedPromise)
                 return JobResult.INSTANCE
             }
 
@@ -205,6 +232,7 @@ class Promise<RESULT> private constructor(
     }
 
     private suspend fun <ANOTHER> transfer(
+            shouldAcquireSemaphore: Boolean,
             from: Promise<ANOTHER>,
             fixedPromise: AtomicReference<Promise<RESULT>>? = null,
             onSucceeded: SucceededHandler<ANOTHER, RESULT> = {
@@ -223,6 +251,9 @@ class Promise<RESULT> private constructor(
             from.awaitSettled()
         } catch (e: CancellationException) {
             selfCancelled = true
+        }
+        if (shouldAcquireSemaphore) {
+            acquireSemaphore()
         }
         val runCancelCallback: suspend (Boolean) -> Unit = { isSelfCancelled ->
             perform(fixedPromiseF) perform@{
@@ -278,8 +309,11 @@ class Promise<RESULT> private constructor(
             config: PromiseConfig?,
             onSucceeded: SucceededHandler<RESULT, NEXT_RESULT>
     ) =
-            Promise(config) next@{
+            Promise((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+                    shouldWrapJobWithSemaphore = false
+            )) next@{
                 state().self.transfer(
+                        true,
                         this@Promise,
                         onSucceeded = { onSucceeded() }
                 )
@@ -298,8 +332,11 @@ class Promise<RESULT> private constructor(
             config: PromiseConfig?,
             onFailed: FailedHandler<NEXT_RESULT>
     ) =
-            Promise(config) next@{
+            Promise((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+                    shouldWrapJobWithSemaphore = false
+            )) next@{
                 state().self.transfer(
+                        true,
                         this@Promise,
                         onFailed = { onFailed() }
                 )
@@ -318,8 +355,11 @@ class Promise<RESULT> private constructor(
             config: PromiseConfig?,
             onCancelled: CancelledListener
     ) =
-            Promise<NEXT_RESULT>(config) next@{
+            Promise<NEXT_RESULT>((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+                    shouldWrapJobWithSemaphore = false
+            )) next@{
                 state().self.transfer(
+                        true,
                         this@Promise,
                         onCancelled = { onCancelled() }
                 )
@@ -340,8 +380,11 @@ class Promise<RESULT> private constructor(
             config: PromiseConfig?,
             onFinally: FinallyHandler<RESULT>
     ) =
-            Promise<RESULT>(config) next@{
+            Promise<RESULT>((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+                    shouldWrapJobWithSemaphore = false
+            )) next@{
                 state().self.transfer(
+                        true,
                         this@Promise,
                         onFinally = { onFinally() }
                 )
