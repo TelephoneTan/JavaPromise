@@ -218,24 +218,6 @@ internal suspend fun onSend(to: Channel<Unit>, then: RunThrowsThrowable) {
     then.run()
 }
 
-internal suspend fun acquirePromiseSemaphore(semaphore: PromiseSemaphore?, n: Int, depth: Int, then: RunThrowsThrowable) {
-    var s = semaphore
-    var d = depth
-    while (s != null) {
-        for (i in 1..n) {
-            s.ticketChannel.receive()
-        }
-        s = s.parent
-        if (d >= 1) {
-            d--
-            if (d <= 0) {
-                break
-            }
-        }
-    }
-    then.run()
-}
-
 internal interface ErrorListener {
     fun onError(e: Throwable?)
 }

@@ -1,5 +1,12 @@
 package pub.telephone.javapromise.async;
 
-public interface AsyncRunnableThrowsThrowable {
+import pub.telephone.javapromise.async.kpromise.RunThrow;
+
+public interface AsyncRunnableThrowsThrowable extends RunThrow {
     void Run() throws Throwable;
+
+    @Override
+    default void run() throws Throwable {
+        Run();
+    }
 }
