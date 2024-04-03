@@ -437,6 +437,26 @@ class Promise<RESULT> private constructor(
         }
     }
 
+    fun toJavaPromise() = pub.telephone.javapromise.async.promise.Promise(
+            config.scopeCancelledBroadcast?.let {
+                object
+                    : pub.telephone.javapromise.async.promise.PromiseCancelledBroadcast,
+                        PromiseCancelledBroadcast by it {}
+            },
+            { resolver, rejector, state ->
+                state.toPromiseScope().run {
+                    next {
+                        resolver.Resolve(value)
+                    }.recover {
+                        rejector.Reject(reason)
+                    }
+                }
+            },
+            config.semaphore?.let {
+                pub.telephone.javapromise.async.promise.PromiseSemaphore(it)
+            }
+    )
+
     companion object {
         fun <RESULT> race(
                 config: PromiseConfig?,
@@ -502,6 +522,17 @@ private fun Job.toPromiseScope(): PromiseScope = run {
     }
 }
 
+private fun pub.telephone.javapromise.async.promise.PromiseState<*>.toPromiseScope(): PromiseScope {
+    val broadcast = PromiseCancelledBroadcast.merge(
+            ScopeCancelledBroadcast,
+            CancelledBroadcast
+    )
+    return object : PromiseScope {
+        override val scopeCancelledBroadcast: PromiseCancelledBroadcast
+            get() = broadcast
+    }
+}
+
 interface Work {
     fun cancel()
 }
@@ -552,6 +583,16 @@ fun PromiseScope.work(builder: WorkFunc) = process(builder.toProcessFunc())
 fun <RESULT> CoroutineScope.process(builder: ProcessFunc<RESULT>) = coroutineContext[Job]?.run {
     process(toPromiseScope(), null, builder)
 } ?: processInNewJob(builder)
-
 fun CoroutineScope.work(builder: WorkFunc) = process(builder.toProcessFunc())
 fun <RESULT> CoroutineScope.promise(job: PromiseJob<RESULT>) = process { promise { job() } }
+fun <RESULT> pub.telephone.javapromise.async.promise.PromiseState<*>.process(
+        builder: ProcessFunc<RESULT>
+) = process(toPromiseScope(), null, builder)
+
+fun pub.telephone.javapromise.async.promise.PromiseState<*>.work(
+        builder: WorkFunc
+) = process(builder.toProcessFunc())
+
+fun <RESULT> pub.telephone.javapromise.async.promise.PromiseState<*>.promise(
+        job: PromiseJob<RESULT>
+) = process { promise { job() } }
