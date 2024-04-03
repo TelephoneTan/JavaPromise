@@ -2,7 +2,9 @@ package pub.telephone.javapromise.async.kpromise
 
 interface PromiseScope {
     val scopeCancelledBroadcast: PromiseCancelledBroadcast?
-    fun <RESULT> promise(job: PromiseJob<RESULT>) = Promise(scopeCancelledBroadcast, job)
+    fun <RESULT> promise(job: PromiseJob<RESULT>) = Promise(PromiseConfig(
+            scopeCancelledBroadcast = scopeCancelledBroadcast
+    ), job)
     fun <RESULT, NEXT_RESULT> Promise<RESULT>.then(
             onSucceeded: SucceededHandler<RESULT, NEXT_RESULT>
     ) = then(scopeCancelledBroadcast, onSucceeded)

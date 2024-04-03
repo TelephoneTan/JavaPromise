@@ -73,14 +73,29 @@ typealias CancelledListener = suspend () -> Unit
 typealias FinallyHandler<LAST_RESULT> = suspend ForwardPack<LAST_RESULT>.() -> JobResult
 typealias FinallyConsumer<LAST_RESULT> = suspend ForwardPack<LAST_RESULT>.() -> Unit
 
-class Promise<RESULT> private constructor(
-        val job: PromiseJob<RESULT>?,
-        private val scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+data class PromiseConfig internal constructor(
+        val semaphore: PromiseSemaphore?,
+        val scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+        internal val shouldWrapJobWithSemaphore: Boolean
 ) {
     constructor(
             scopeCancelledBroadcast: PromiseCancelledBroadcast? = null,
+            semaphore: PromiseSemaphore? = null,
+    ) : this(semaphore, scopeCancelledBroadcast, true)
+
+    companion object {
+        val EMPTY_CONFIG = PromiseConfig()
+    }
+}
+
+class Promise<RESULT> private constructor(
+        val job: PromiseJob<RESULT>?,
+        private val config: PromiseConfig,
+) {
+    constructor(
+            config: PromiseConfig? = null,
             job: PromiseJob<RESULT>,
-    ) : this(job, scopeCancelledBroadcast)
+    ) : this(job, config ?: PromiseConfig.EMPTY_CONFIG)
 
     private val status = AtomicReference(Status.RUNNING)
     private val settled = Channel<Any>()
@@ -113,7 +128,7 @@ class Promise<RESULT> private constructor(
     private val cancelledBroadcaster: PromiseCancelledBroadcaster = pub.telephone.javapromise.async.promise.PromiseCancelledBroadcaster()
 
     // 此字段必须放在最后一个，因为 cancel 方法可能会被立即调用
-    private val scopeUnListenKey = scopeCancelledBroadcast?.listen(this::cancel)
+    private val scopeUnListenKey = config.scopeCancelledBroadcast?.listen(this::cancel)
 
     private fun settle(status: Status, op: () -> Unit = {}): Boolean {
         return submit.trySend(null).takeIf { it.isSuccess }?.run {
@@ -121,7 +136,7 @@ class Promise<RESULT> private constructor(
             this@Promise.status.set(status)
             settled.close()
             // scopeUnListenKey 为空时不一定表示没有监听，有可能是初始化字段时已经取消导致 cancel 被立即调用
-            scopeUnListenKey?.let { scopeCancelledBroadcast?.unListen(it) }
+            scopeUnListenKey?.let { config.scopeCancelledBroadcast?.unListen(it) }
             if (status == Status.CANCELLED) {
                 runningJob?.cancel()
                 cancelledBroadcaster.broadcast()
@@ -171,7 +186,7 @@ class Promise<RESULT> private constructor(
 
             override val scopeCancelledBroadcast = PromiseCancelledBroadcast.merge(
                     *arrayOf(
-                            this@Promise.scopeCancelledBroadcast,
+                            this@Promise.config.scopeCancelledBroadcast,
                             this@Promise.cancelledBroadcaster
                     )
             )
@@ -252,7 +267,9 @@ class Promise<RESULT> private constructor(
             scopeCancelledBroadcast: PromiseCancelledBroadcast?,
             onSucceeded: SucceededHandler<RESULT, NEXT_RESULT>
     ) =
-            Promise(scopeCancelledBroadcast) next@{
+            Promise(PromiseConfig(
+                    scopeCancelledBroadcast = scopeCancelledBroadcast
+            )) next@{
                 state().self.transfer(
                         this@Promise,
                         onSucceeded = { onSucceeded() }
@@ -272,7 +289,9 @@ class Promise<RESULT> private constructor(
             scopeCancelledBroadcast: PromiseCancelledBroadcast?,
             onFailed: FailedHandler<NEXT_RESULT>
     ) =
-            Promise(scopeCancelledBroadcast) next@{
+            Promise(PromiseConfig(
+                    scopeCancelledBroadcast = scopeCancelledBroadcast
+            )) next@{
                 state().self.transfer(
                         this@Promise,
                         onFailed = { onFailed() }
@@ -292,7 +311,9 @@ class Promise<RESULT> private constructor(
             scopeCancelledBroadcast: PromiseCancelledBroadcast?,
             onCancelled: CancelledListener
     ) =
-            Promise<NEXT_RESULT>(scopeCancelledBroadcast) next@{
+            Promise<NEXT_RESULT>(PromiseConfig(
+                    scopeCancelledBroadcast = scopeCancelledBroadcast
+            )) next@{
                 state().self.transfer(
                         this@Promise,
                         onCancelled = { onCancelled() }
@@ -314,7 +335,9 @@ class Promise<RESULT> private constructor(
             scopeCancelledBroadcast: PromiseCancelledBroadcast?,
             onFinally: FinallyHandler<RESULT>
     ) =
-            Promise<RESULT>(scopeCancelledBroadcast) next@{
+            Promise<RESULT>(PromiseConfig(
+                    scopeCancelledBroadcast = scopeCancelledBroadcast
+            )) next@{
                 state().self.transfer(
                         this@Promise,
                         onFinally = { onFinally() }
@@ -373,7 +396,9 @@ class Promise<RESULT> private constructor(
                 scopeCancelledBroadcast: PromiseCancelledBroadcast?,
                 vararg promises: Promise<RESULT>
         ): Promise<RESULT> {
-            return Promise(scopeCancelledBroadcast) {
+            return Promise(PromiseConfig(
+                    scopeCancelledBroadcast = scopeCancelledBroadcast
+            )) {
                 rsp(select {
                     for (p in promises) {
                         p.onSettled { p }
@@ -382,17 +407,26 @@ class Promise<RESULT> private constructor(
             }
         }
 
-        fun <RESULT> resolve(value: RESULT) = Promise<RESULT>(null, null).apply {
+        fun <RESULT> resolve(value: RESULT) = Promise<RESULT>(
+                null,
+                PromiseConfig.EMPTY_CONFIG
+        ).apply {
             succeed(value)
         }
 
-        fun <RESULT> reject(reason: Throwable) = Promise<RESULT>(null, null).apply {
+        fun <RESULT> reject(reason: Throwable) = Promise<RESULT>(
+                null,
+                PromiseConfig.EMPTY_CONFIG
+        ).apply {
             fail(reason)
         }
 
         fun error(reason: Throwable) = reject<Any?>(reason)
 
-        fun <RESULT> cancel() = Promise<RESULT>(null, null).apply {
+        fun <RESULT> cancel() = Promise<RESULT>(
+                null,
+                PromiseConfig.EMPTY_CONFIG
+        ).apply {
             cancel()
         }
 
