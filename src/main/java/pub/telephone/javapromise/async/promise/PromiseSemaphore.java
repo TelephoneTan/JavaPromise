@@ -5,21 +5,26 @@ import kotlin.coroutines.Continuation;
 import org.jetbrains.annotations.Nullable;
 import pub.telephone.javapromise.async.AsyncRunnableThrowsThrowable;
 
-public class PromiseSemaphore extends pub.telephone.javapromise.async.kpromise.PromiseSemaphore {
+public class PromiseSemaphore {
+    public final pub.telephone.javapromise.async.kpromise.PromiseSemaphore kSemaphore;
     public PromiseSemaphore(long n) {
-        super(n);
+        this.kSemaphore = new pub.telephone.javapromise.async.kpromise.PromiseSemaphore(n);
+    }
+
+    public PromiseSemaphore(pub.telephone.javapromise.async.kpromise.PromiseSemaphore kSemaphore) {
+        this.kSemaphore = kSemaphore;
     }
 
     public void Acquire(@Nullable AsyncRunnableThrowsThrowable then, Continuation<? super Unit> continuation) {
-        acquire(1, then, continuation);
+        kSemaphore.acquire(1, then, continuation);
     }
 
     public void Release() {
-        release(1);
+        kSemaphore.release(1);
     }
 
     public PromiseSemaphore Then(@Nullable PromiseSemaphore child) {
-        then(child);
+        kSemaphore.then(child == null ? null : child.kSemaphore);
         return this;
     }
 }
