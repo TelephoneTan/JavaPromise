@@ -1,7 +1,11 @@
 package pub.telephone.javapromise.async.promise;
 
 public interface PromiseCancelledBroadcast extends pub.telephone.javapromise.async.kpromise.PromiseCancelledBroadcast {
-    Object Listen(Runnable r);
+    default Object Listen(Runnable r) {
+        return listen(r);
+    }
 
-    void UnListen(Object key);
+    default void UnListen(Object key) {
+        unListen(key);
+    }
 }

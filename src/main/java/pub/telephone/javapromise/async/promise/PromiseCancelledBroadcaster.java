@@ -13,10 +13,16 @@ public class PromiseCancelledBroadcaster implements PromiseCancelledBroadcast, p
     private final HashMap<Object, Runnable> Listeners = new HashMap<>();
 
     @Override
-    public synchronized Object Listen(Runnable r) {
+    public boolean isActive() {
+        return isActive.get();
+    }
+
+    @NotNull
+    @Override
+    public synchronized Object listen(@NotNull Runnable r) {
         if (!isActive.get()) {
             r.run();
-            return null;
+            return new Object();
         }
         Object key = new Object();
         Listeners.put(key, r);
@@ -24,24 +30,8 @@ public class PromiseCancelledBroadcaster implements PromiseCancelledBroadcast, p
     }
 
     @Override
-    public synchronized void UnListen(Object key) {
+    public synchronized void unListen(@NotNull Object key) {
         Listeners.remove(key);
-    }
-
-    @Override
-    public boolean isActive() {
-        return isActive.get();
-    }
-
-    @NotNull
-    @Override
-    public Object listen(@NotNull Runnable r) {
-        return Listen(r);
-    }
-
-    @Override
-    public void unListen(@NotNull Object key) {
-        UnListen(key);
     }
     public synchronized void Broadcast() {
         isActive.set(false);
