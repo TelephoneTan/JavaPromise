@@ -93,7 +93,7 @@ class Promise<RESULT> private constructor(
         private val config: PromiseConfig,
 ) {
     constructor(
-            config: PromiseConfig? = null,
+            config: PromiseConfig?,
             job: PromiseJob<RESULT>,
     ) : this(job, config ?: PromiseConfig.EMPTY_CONFIG)
 
@@ -105,7 +105,18 @@ class Promise<RESULT> private constructor(
     private var timeoutTriggered = false
     private var value: RESULT? = null
     private var reason: Throwable? = null
-    private val runningJob: Job? = job?.let {
+    private val runningJob: Job? = job?.run jobRun@{
+        config.semaphore?.run semaphoreRun@{
+            if (config.shouldWrapJobWithSemaphore) {
+                wrap@{
+                    this@semaphoreRun.acquire()
+                    this@jobRun.invoke(this@wrap)
+                }
+            } else {
+                this@jobRun
+            }
+        } ?: this@jobRun
+    }?.let {
         CoroutineScope(dispatcher.get() + CoroutineExceptionHandler { _, _ ->
             // 不在这里捕获异常，因为 CancellationException 不会在这里被捕获，而实际上
             // 并不是所有内部抛出的 CancellationException 都意味着此 Job 已经被取消。
@@ -264,12 +275,10 @@ class Promise<RESULT> private constructor(
     }
 
     fun <NEXT_RESULT> then(
-            scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+            config: PromiseConfig?,
             onSucceeded: SucceededHandler<RESULT, NEXT_RESULT>
     ) =
-            Promise(PromiseConfig(
-                    scopeCancelledBroadcast = scopeCancelledBroadcast
-            )) next@{
+            Promise(config) next@{
                 state().self.transfer(
                         this@Promise,
                         onSucceeded = { onSucceeded() }
@@ -278,20 +287,18 @@ class Promise<RESULT> private constructor(
             }
 
     fun next(
-            scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+            config: PromiseConfig?,
             onSucceeded: SucceededConsumer<RESULT>
-    ) = then(scopeCancelledBroadcast) {
+    ) = then(config) {
         onSucceeded()
         rsv(null)
     }
 
     fun <NEXT_RESULT> catch(
-            scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+            config: PromiseConfig?,
             onFailed: FailedHandler<NEXT_RESULT>
     ) =
-            Promise(PromiseConfig(
-                    scopeCancelledBroadcast = scopeCancelledBroadcast
-            )) next@{
+            Promise(config) next@{
                 state().self.transfer(
                         this@Promise,
                         onFailed = { onFailed() }
@@ -300,20 +307,18 @@ class Promise<RESULT> private constructor(
             }
 
     fun recover(
-            scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+            config: PromiseConfig?,
             onFailed: FailedConsumer
-    ) = catch(scopeCancelledBroadcast) {
+    ) = catch(config) {
         onFailed()
         rsv(null)
     }
 
     fun <NEXT_RESULT> forCancel(
-            scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+            config: PromiseConfig?,
             onCancelled: CancelledListener
     ) =
-            Promise<NEXT_RESULT>(PromiseConfig(
-                    scopeCancelledBroadcast = scopeCancelledBroadcast
-            )) next@{
+            Promise<NEXT_RESULT>(config) next@{
                 state().self.transfer(
                         this@Promise,
                         onCancelled = { onCancelled() }
@@ -322,22 +327,20 @@ class Promise<RESULT> private constructor(
             }
 
     fun aborted(
-            scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+            config: PromiseConfig?,
             onCancelled: CancelledListener
-    ) = forCancel<RESULT>(scopeCancelledBroadcast, onCancelled)
+    ) = forCancel<RESULT>(config, onCancelled)
 
     fun terminated(
-            scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+            config: PromiseConfig?,
             onCancelled: CancelledListener
-    ) = forCancel<Any?>(scopeCancelledBroadcast, onCancelled)
+    ) = forCancel<Any?>(config, onCancelled)
 
     fun finally(
-            scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+            config: PromiseConfig?,
             onFinally: FinallyHandler<RESULT>
     ) =
-            Promise<RESULT>(PromiseConfig(
-                    scopeCancelledBroadcast = scopeCancelledBroadcast
-            )) next@{
+            Promise<RESULT>(config) next@{
                 state().self.transfer(
                         this@Promise,
                         onFinally = { onFinally() }
@@ -346,9 +349,9 @@ class Promise<RESULT> private constructor(
             }
 
     fun last(
-            scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+            config: PromiseConfig?,
             onFinally: FinallyConsumer<RESULT>
-    ) = finally(scopeCancelledBroadcast) {
+    ) = finally(config) {
         onFinally()
         forward()
     }
@@ -361,7 +364,7 @@ class Promise<RESULT> private constructor(
             }
             currentSN = ++timeoutSN
         }
-        Promise delayP@{
+        Promise(null) delayP@{
             delay(d)
             val valid = synchronized(setTimeoutMutex) valid@{
                 if (timeoutTriggered) {
@@ -393,12 +396,10 @@ class Promise<RESULT> private constructor(
 
     companion object {
         fun <RESULT> race(
-                scopeCancelledBroadcast: PromiseCancelledBroadcast?,
+                config: PromiseConfig?,
                 vararg promises: Promise<RESULT>
         ): Promise<RESULT> {
-            return Promise(PromiseConfig(
-                    scopeCancelledBroadcast = scopeCancelledBroadcast
-            )) {
+            return Promise(config) {
                 rsp(select {
                     for (p in promises) {
                         p.onSettled { p }
@@ -502,7 +503,7 @@ private fun <RESULT> processInNewJob(builder: ProcessFunc<RESULT>) = Job().run n
 
 fun <RESULT> process(builder: ProcessFunc<RESULT>) = processInNewJob(builder)
 fun work(builder: WorkFunc) = process(builder.toProcessFunc())
-fun <RESULT> promise(job: PromiseJob<RESULT>) = process { promise(job) }
+fun <RESULT> promise(job: PromiseJob<RESULT>) = process { promise { job() } }
 fun <RESULT> PromiseScope.process(builder: ProcessFunc<RESULT>) = process(this, null, builder)
 fun PromiseScope.work(builder: WorkFunc) = process(builder.toProcessFunc())
 fun <RESULT> CoroutineScope.process(builder: ProcessFunc<RESULT>) = coroutineContext[Job]?.run {
@@ -510,4 +511,4 @@ fun <RESULT> CoroutineScope.process(builder: ProcessFunc<RESULT>) = coroutineCon
 } ?: processInNewJob(builder)
 
 fun CoroutineScope.work(builder: WorkFunc) = process(builder.toProcessFunc())
-fun <RESULT> CoroutineScope.promise(job: PromiseJob<RESULT>) = process { promise(job) }
+fun <RESULT> CoroutineScope.promise(job: PromiseJob<RESULT>) = process { promise { job() } }

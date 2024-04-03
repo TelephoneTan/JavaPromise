@@ -2,46 +2,83 @@ package pub.telephone.javapromise.async.kpromise
 
 interface PromiseScope {
     val scopeCancelledBroadcast: PromiseCancelledBroadcast?
-    fun <RESULT> promise(job: PromiseJob<RESULT>) = Promise(PromiseConfig(
+    fun <RESULT> promise(
+            config: PromiseConfig? = null,
+            job: PromiseJob<RESULT>,
+    ) = Promise((config ?: PromiseConfig.EMPTY_CONFIG).copy(
             scopeCancelledBroadcast = scopeCancelledBroadcast
     ), job)
     fun <RESULT, NEXT_RESULT> Promise<RESULT>.then(
+            config: PromiseConfig? = null,
             onSucceeded: SucceededHandler<RESULT, NEXT_RESULT>
-    ) = then(scopeCancelledBroadcast, onSucceeded)
+    ) = then((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+            scopeCancelledBroadcast = scopeCancelledBroadcast
+    ), onSucceeded)
 
     fun <RESULT> Promise<RESULT>.next(
+            config: PromiseConfig? = null,
             onSucceeded: SucceededConsumer<RESULT>
-    ) = next(scopeCancelledBroadcast, onSucceeded)
+    ) = next((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+            scopeCancelledBroadcast = scopeCancelledBroadcast
+    ), onSucceeded)
 
     fun <NEXT_RESULT> Promise<*>.catch(
+            config: PromiseConfig? = null,
             onFailed: FailedHandler<NEXT_RESULT>
-    ) = catch(scopeCancelledBroadcast, onFailed)
+    ) = catch((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+            scopeCancelledBroadcast = scopeCancelledBroadcast
+    ), onFailed)
 
     fun Promise<*>.recover(
+            config: PromiseConfig? = null,
             onFailed: FailedConsumer
-    ) = recover(scopeCancelledBroadcast, onFailed)
+    ) = recover((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+            scopeCancelledBroadcast = scopeCancelledBroadcast
+    ), onFailed)
 
     fun <NEXT_RESULT> Promise<*>.forCancel(
+            config: PromiseConfig? = null,
             onCancelled: CancelledListener
-    ) = forCancel<NEXT_RESULT>(scopeCancelledBroadcast, onCancelled)
+    ) = forCancel<NEXT_RESULT>((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+            scopeCancelledBroadcast = scopeCancelledBroadcast
+    ), onCancelled)
 
     fun Promise<*>.aborted(
+            config: PromiseConfig? = null,
             onCancelled: CancelledListener
-    ) = aborted(scopeCancelledBroadcast, onCancelled)
+    ) = aborted((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+            scopeCancelledBroadcast = scopeCancelledBroadcast
+    ), onCancelled)
 
     fun Promise<*>.terminated(
+            config: PromiseConfig? = null,
             onCancelled: CancelledListener
-    ) = terminated(scopeCancelledBroadcast, onCancelled)
+    ) = terminated((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+            scopeCancelledBroadcast = scopeCancelledBroadcast
+    ), onCancelled)
 
     fun <RESULT> Promise<RESULT>.finally(
+            config: PromiseConfig? = null,
             onFinally: FinallyHandler<RESULT>
-    ) = finally(scopeCancelledBroadcast, onFinally)
+    ) = finally((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+            scopeCancelledBroadcast = scopeCancelledBroadcast
+    ), onFinally)
 
     fun <RESULT> Promise<RESULT>.last(
+            config: PromiseConfig? = null,
             onFinally: FinallyConsumer<RESULT>
-    ) = last(scopeCancelledBroadcast, onFinally)
+    ) = last((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+            scopeCancelledBroadcast = scopeCancelledBroadcast
+    ), onFinally)
+
+    fun <RESULT> race(
+            config: PromiseConfig? = null,
+            vararg promises: Promise<RESULT>
+    ) = Promise.race((config ?: PromiseConfig.EMPTY_CONFIG).copy(
+            scopeCancelledBroadcast = scopeCancelledBroadcast
+    ), *promises)
 
     fun <RESULT> race(
             vararg promises: Promise<RESULT>
-    ) = Promise.race(scopeCancelledBroadcast, *promises)
+    ) = race(null, *promises)
 }
