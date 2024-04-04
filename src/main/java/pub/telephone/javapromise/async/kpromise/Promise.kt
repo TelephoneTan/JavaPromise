@@ -471,9 +471,7 @@ class Promise<RESULT> private constructor(
                     }
                 }
             },
-            config.semaphore?.let {
-                pub.telephone.javapromise.async.promise.PromiseSemaphore(it)
-            }
+            null
     )
 
     companion object {
