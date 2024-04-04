@@ -454,7 +454,10 @@ class Promise<RESULT> private constructor(
     }
 
     fun toJavaPromise() = pub.telephone.javapromise.async.promise.Promise(
-            config.scopeCancelledBroadcast?.let {
+            PromiseCancelledBroadcast.merge(
+                    config.scopeCancelledBroadcast,
+                    cancelledBroadcaster
+            ).let {
                 object
                     : pub.telephone.javapromise.async.promise.PromiseCancelledBroadcast,
                         PromiseCancelledBroadcast by it {}
