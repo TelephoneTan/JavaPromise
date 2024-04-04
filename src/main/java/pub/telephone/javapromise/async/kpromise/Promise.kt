@@ -613,3 +613,29 @@ fun pub.telephone.javapromise.async.promise.PromiseState<*>.work(
 fun <RESULT> pub.telephone.javapromise.async.promise.PromiseState<*>.promise(
         job: PromiseJob<RESULT>
 ) = process { promise { job() } }
+
+fun <RESULT> pub.telephone.javapromise.async.promise.Promise<RESULT>.toKPromise() =
+        PromiseCancelledBroadcast.merge(
+                ScopeCancelledBroadcast,
+                CancelledBroadcast
+        ).run mergeRun@{
+            Promise<RESULT>(
+                    PromiseConfig(
+                            scopeCancelledBroadcast = this@mergeRun,
+                            semaphore = null
+                    )
+            ) kp@{
+                Then<Any?> { v ->
+                    (object : PromiseScope {
+                        override val scopeCancelledBroadcast: PromiseCancelledBroadcast
+                            get() = this@mergeRun
+                    }).promise {
+                        this@kp.rsv(v)
+                        rsv(null)
+                    }
+                }.Catch<Any?> { e ->
+                    rej(e)
+                }
+                waiting()
+            }
+        }
