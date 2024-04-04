@@ -18,7 +18,18 @@ class PromiseState<RESULT>(
         internal val self: Promise<RESULT>
 )
 
-interface ResolvePack<RESULT> : PromiseCancelledBroadcast, PromiseScope {
+interface ResolvePack<RESULT> : PromiseScope, PromiseCancelledBroadcast {
+    override val scopeCancelledBroadcast: PromiseCancelledBroadcast
+    override val isActive: Boolean
+        get() = scopeCancelledBroadcast.isActive
+
+    override fun listen(r: java.lang.Runnable): Any {
+        return scopeCancelledBroadcast.listen(r)
+    }
+
+    override fun unListen(key: Any) {
+        scopeCancelledBroadcast.unListen(key)
+    }
     suspend fun rsv(v: RESULT): JobResult
     suspend fun rsp(p: Promise<RESULT>): JobResult
     fun rej(e: Throwable): JobResult = throw e
@@ -201,7 +212,7 @@ class Promise<RESULT> private constructor(
             op: suspend ForwardPack<RESULT>.() -> Unit,
     ) {
         val s = PromiseState(this)
-        op(object : ForwardPack<RESULT>, PromiseCancelledBroadcast by cancelledBroadcaster {
+        op(object : ForwardPack<RESULT> {
             override suspend fun rsv(v: RESULT): JobResult {
                 fixedPromise?.get()?.run {
                     forward()
