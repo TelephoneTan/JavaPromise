@@ -32,7 +32,7 @@ interface ResolvePack<RESULT> : PromiseScope, PromiseCancelledBroadcast {
     }
     suspend fun rsv(v: RESULT): JobResult
     suspend fun rsp(p: Promise<RESULT>): JobResult
-    fun rej(e: Throwable): JobResult = throw e
+    fun rej(e: Throwable): JobResult
     fun state(): PromiseState<RESULT>
 }
 
@@ -222,6 +222,11 @@ class Promise<RESULT> private constructor(
 
             override suspend fun rsp(p: Promise<RESULT>): JobResult {
                 transfer(false, p, fixedPromise)
+                return JobResult.INSTANCE
+            }
+
+            override fun rej(e: Throwable): JobResult {
+                fail(e)
                 return JobResult.INSTANCE
             }
 
