@@ -559,7 +559,7 @@ typealias ProcessFunc<RESULT> = PromiseScope.() -> Promise<RESULT>
 
 typealias WorkFunc = PromiseScope.() -> Unit
 
-private fun WorkFunc.toProcessFunc(): ProcessFunc<Any?> = {
+fun WorkFunc.toProcessFunc(): ProcessFunc<Any?> = {
     this@toProcessFunc()
     Promise.resolve(null)
 }
