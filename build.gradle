@@ -7,6 +7,12 @@ plugins {
 group 'org.example'
 version '1.0-SNAPSHOT'
 
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.add("-Xjvm-default=all-compatibility")
+    }
+}
+
 apply from: "./local.build.gradle"
 
 publishing {
