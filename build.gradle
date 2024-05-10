@@ -13,6 +13,11 @@ kotlin {
     }
 }
 
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
 apply from: "./local.build.gradle"
 
 publishing {
@@ -30,7 +35,7 @@ publishing {
         gpr(MavenPublication) {
             groupId = 'pub.telephone'
             artifactId = 'java-promise'
-            version = '5.3.0'
+            version = '5.3.1'
 
             from(components.java)
         }
