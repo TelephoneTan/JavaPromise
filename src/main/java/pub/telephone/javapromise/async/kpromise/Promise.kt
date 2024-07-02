@@ -283,6 +283,10 @@ class Promise<RESULT> private constructor(
                         onCancelled()
                     }
                 }
+                // if it is `from` instead of ourselves that is cancelled,
+                // we should immediately cancel ourselves before running
+                // callbacks, because the callbacks may change our state,
+                // but our state should be "cancelled" if `from` is cancelled
                 if (!isSelfCancelled) {
                     this@Promise.cancel()
                 }
@@ -291,7 +295,7 @@ class Promise<RESULT> private constructor(
                 }
             }
         }
-        if (selfCancelled) {
+        if (selfCancelled) {// if we are cancelled, treat it as `from` is cancelled
             runCancelCallback(true)
         } else {
             when (from.status.get()) {
@@ -586,6 +590,10 @@ private fun <RESULT> process(
         builder: ProcessFunc<RESULT>
 ): Task<RESULT> = Task(promiseScope.builder(), cancelledBroadcaster)
 
+/**
+ * Promise listens to the outer Job, but does not integrate itself into the coroutines' Job tree,
+ * in other words, Promise knows about the Job, but the Job doesn't know about Promise
+ */
 private fun <RESULT> processInNewJob(parentJob: Job? = null, builder: ProcessFunc<RESULT>) =
     Job(parentJob).run newJob@{
         toPromiseScope().run scope@{
