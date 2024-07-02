@@ -58,9 +58,11 @@ private val factory = ThreadFactory {
     thread
 }
 
-private fun newFixedDispatcher(n: Int) = Executors.newFixedThreadPool(n, factory).asCoroutineDispatcher()
+private fun newFixedDispatcher(n: Int) =
+    Executors.newFixedThreadPool(n, factory).asCoroutineDispatcher()
 
-private fun newCachedDispatcher() = Executors.newCachedThreadPool(factory).asCoroutineDispatcher()
+private fun newCachedDispatcher() =
+    Executors.newCachedThreadPool(factory).asCoroutineDispatcher()
 
 private val dispatcher = AtomicReference(newCachedDispatcher())
 
@@ -173,7 +175,8 @@ class Promise<RESULT> private constructor(
             }
         }
     }
-    private val cancelledBroadcaster: PromiseCancelledBroadcaster = pub.telephone.javapromise.async.promise.PromiseCancelledBroadcaster()
+    private val cancelledBroadcaster: PromiseCancelledBroadcaster =
+        pub.telephone.javapromise.async.promise.PromiseCancelledBroadcaster()
 
     // 此字段必须放在最后一个，因为 cancel 方法可能会被立即调用
     private val scopeUnListenKey = config.scopeCancelledBroadcast?.listen(this::cancel)
@@ -415,7 +418,10 @@ class Promise<RESULT> private constructor(
         forward()
     }
 
-    fun setTimeout(d: Duration, onTimeOut: suspend (d: Duration) -> Unit = { }): Promise<RESULT> {
+    fun setTimeout(
+        d: Duration,
+        onTimeOut: suspend (d: Duration) -> Unit = { }
+    ): Promise<RESULT> {
         val currentSN: Int
         synchronized(setTimeoutMutex) {
             if (timeoutTriggered) {
@@ -539,7 +545,8 @@ private fun Job.toPromiseScope(): PromiseScope = run {
     }
 }
 
-private fun pub.telephone.javapromise.async.promise.PromiseState<*>.toPromiseScope(): PromiseScope {
+private fun pub.telephone.javapromise.async.promise.PromiseState<*>.toPromiseScope(
+): PromiseScope {
     val broadcast = PromiseCancelledBroadcast.merge(
             ScopeCancelledBroadcast,
             CancelledBroadcast
@@ -554,7 +561,10 @@ interface Work {
     fun cancel()
 }
 
-class Task<RESULT>(val promise: Promise<RESULT>, private val cancelledBroadcaster: PromiseCancelledBroadcaster?) : Work {
+class Task<RESULT>(
+    val promise: Promise<RESULT>,
+    private val cancelledBroadcaster: PromiseCancelledBroadcaster?
+) : Work {
     fun await() = runBlocking { promise.await() }
     override fun cancel() {
         cancelledBroadcaster!!.broadcast()
@@ -576,40 +586,60 @@ private fun <RESULT> process(
         builder: ProcessFunc<RESULT>
 ): Task<RESULT> = Task(promiseScope.builder(), cancelledBroadcaster)
 
-private fun <RESULT> processInNewJob(builder: ProcessFunc<RESULT>) = Job().run newJob@{
-    toPromiseScope().run scope@{
-        process(
+private fun <RESULT> processInNewJob(parentJob: Job? = null, builder: ProcessFunc<RESULT>) =
+    Job(parentJob).run newJob@{
+        toPromiseScope().run scope@{
+            process(
                 this@scope,
                 object :
-                        PromiseCancelledBroadcaster,
-                        PromiseCancelledBroadcast by this@scope.scopeCancelledBroadcast!! {
+                    PromiseCancelledBroadcaster,
+                    PromiseCancelledBroadcast by this@scope.scopeCancelledBroadcast!! {
                     override fun broadcast() {
                         this@newJob.cancel()
                     }
                 },
                 builder
-        )
+            )
+        }
     }
-}
 
-fun <RESULT> process(builder: ProcessFunc<RESULT>) = processInNewJob(builder)
+//
+fun <RESULT> process(builder: ProcessFunc<RESULT>) = processInNewJob(builder = builder)
 fun work(builder: WorkFunc) = process(builder.toProcessFunc())
 fun <RESULT> promise(job: PromiseJob<RESULT>) = process { promise { job() } }
-fun <RESULT> PromiseScope.process(builder: ProcessFunc<RESULT>) = process(this, null, builder)
+
+//
+fun <RESULT> PromiseScope.process(builder: ProcessFunc<RESULT>) =
+    pub.telephone.javapromise.async.promise.PromiseCancelledBroadcaster().let { broadcaster ->
+        PromiseCancelledBroadcast.merge(scopeCancelledBroadcast, broadcaster).let { broadcast ->
+            object : PromiseScope {
+                override val scopeCancelledBroadcast: PromiseCancelledBroadcast
+                    get() = broadcast
+            }.let { scope ->
+                process(
+                    scope,
+                    broadcaster,
+                    builder
+                )
+            }
+        }
+    }
 fun PromiseScope.work(builder: WorkFunc) = process(builder.toProcessFunc())
-fun <RESULT> CoroutineScope.process(builder: ProcessFunc<RESULT>) = coroutineContext[Job]?.run {
-    process(toPromiseScope(), null, builder)
-} ?: processInNewJob(builder)
+
+//
+fun <RESULT> CoroutineScope.process(builder: ProcessFunc<RESULT>) = processInNewJob(
+    coroutineContext[Job], builder
+)
 fun CoroutineScope.work(builder: WorkFunc) = process(builder.toProcessFunc())
 fun <RESULT> CoroutineScope.promise(job: PromiseJob<RESULT>) = process { promise { job() } }
+
+//
 fun <RESULT> pub.telephone.javapromise.async.promise.PromiseState<*>.process(
         builder: ProcessFunc<RESULT>
-) = process(toPromiseScope(), null, builder)
-
+) = toPromiseScope().process(builder)
 fun pub.telephone.javapromise.async.promise.PromiseState<*>.work(
         builder: WorkFunc
 ) = process(builder.toProcessFunc())
-
 fun <RESULT> pub.telephone.javapromise.async.promise.PromiseState<*>.promise(
         job: PromiseJob<RESULT>
 ) = process { promise { job() } }
